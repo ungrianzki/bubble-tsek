@@ -177,6 +177,23 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:12px 18px;border-radius:12px;font-weight:500;z-index:80;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
 .toast.bad{background:var(--bad);color:#fff}
 .spacer{height:14px}
+/* auto-save popup + switches */
+.autopop{position:absolute;left:12px;right:12px;bottom:12px;background:var(--surface);color:var(--ink);border-radius:14px;padding:12px 14px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden;animation:apIn .18s ease-out;z-index:5}
+@keyframes apIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+.ap-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.ap-ok{color:var(--ok);font-weight:700}
+.ap-score{color:var(--muted)}.ap-score b{font-size:1.8rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.ap-name{font-weight:600;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ap-roll{color:var(--muted);font-size:.85rem}
+.ap-btns{display:flex;gap:8px;margin:10px 0 12px}.ap-btns .btn{flex:1}
+.ap-bar{height:5px;background:var(--surface2);margin:0 -14px}.ap-bar i{display:block;height:100%;background:var(--ok);animation:apBar 2s linear forwards}
+@keyframes apBar{from{width:100%}to{width:0}}
+.tgl-row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.tgl-row+.tgl-row{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.tgl-row p{margin:2px 0 0}
+.tgl{width:52px;height:30px;border-radius:99px;border:0;background:var(--line);position:relative;cursor:pointer;flex:none;padding:0}
+.tgl i{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s}
+.tgl.on{background:var(--ok)}.tgl.on i{left:25px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -460,7 +477,7 @@ const STORE='bubbletsek.v1';
 const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores'}}
+function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores',autoSave:false,sound:true}}
 function load(){try{const t=localStorage.getItem(STORE);if(t)return Object.assign(fresh(),JSON.parse(t))}catch(e){}return fresh()}
 function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}}
 let S=load();
@@ -652,11 +669,30 @@ function scanSide(){
   const saved=S.students.filter(s=>S.results[rk(s.roll)]).length,total=S.students.length;
   const recent=Object.values(S.results).sort((a,b)=>b.at-a.at).slice(0,6),sm=studentMap();
   return `<div class="card"><small class="dim">Scores saved</small><div class="big">${saved}<span class="dim" style="font-size:1rem;font-weight:500"> of ${total}</span></div><div class="bar"><i style="width:${total?saved/total*100:0}%"></i></div></div>
+  <div class="card">
+    <div class="tgl-row"><div><b>Auto-save</b><p class="help">Good sheets save by themselves. Sheets that need checking still stop and ask.</p></div><button class="tgl ${S.autoSave?'on':''}" role="switch" aria-checked="${!!S.autoSave}" aria-label="Auto-save" data-act="tglAuto"><i></i></button></div>
+    <div class="tgl-row"><div><b>Beep sound</b><p class="help">High beep = saved. Low double beep = needs checking.</p></div><button class="tgl ${S.sound!==false?'on':''}" role="switch" aria-checked="${S.sound!==false}" aria-label="Beep sound" data-act="tglSound"><i></i></button></div>
+  </div>
   <div class="card"><small class="dim" style="display:block;margin-bottom:8px">Mark detection</small>
   <div class="seg" role="group" aria-label="Mark detection">${[[1,'Light marks'],[2,'Normal'],[3,'Strict']].map(([v,l])=>`<button class="${S.sens===v?'on':''}" data-act="sens" data-v="${v}">${l}</button>`).join('')}</div>
   <p class="help">Use “Light marks” for faint pencil or small X marks. Use “Strict” if erased marks are being counted.</p></div>
   <div class="card"><small class="dim" style="display:block;margin-bottom:6px">Last saved</small>${recent.length?`<ul class="recent">${recent.map(r=>{const g=grade(r.ans),s=sm[r.roll];return `<li><span>${esc(s?s.name:r.roll)}</span><span class="mono">${fmt(g.score)}/${fmt(maxScore())}</span></li>`}).join('')}</ul>`:'<p class="dim" style="margin:0;font-size:.9rem">Nothing saved yet.</p>'}</div>`;
 }
+
+/* ================= sounds ================= */
+let AC=null;
+function audioUnlock(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}}
+function beep(kind){
+  if(S.sound===false)return;
+  try{audioUnlock();if(!AC)return;const t=AC.currentTime+.01,ok=kind==='ok';
+    const tones=ok?[[1046,0,.09],[1568,.1,.16]]:[[330,0,.16],[330,.24,.18]];
+    tones.forEach(([f,st,d])=>{const o=AC.createOscillator(),g=AC.createGain();o.type=ok?'sine':'square';o.frequency.value=f;
+      g.gain.setValueAtTime(.0001,t+st);g.gain.exponentialRampToValueAtTime(ok?.4:.15,t+st+.012);g.gain.exponentialRampToValueAtTime(.0001,t+st+d);
+      o.connect(g);g.connect(AC.destination);o.start(t+st);o.stop(t+st+d+.03)});
+  }catch(e){}
+}
+function buzz(kind){try{navigator.vibrate&&navigator.vibrate(kind==='ok'?60:[140,90,140])}catch(e){}}
+function refreshSide(){const side=$('#scanSide');if(side)side.innerHTML=scanSide();renderStepperOnly()}
 
 /* ================= camera ================= */
 const Cam={stream:null,p:'',mode:'student',expect:null,onCap:null,paused:false,running:false,hist:[],lastSig:null,sawEmpty:true,timer:null,cv:document.createElement('canvas'),cvS:document.createElement('canvas'),lastMsg:''};
@@ -664,6 +700,7 @@ function camEls(){const p=Cam.p;return {v:$('#'+p+'vid'),ov:$('#'+p+'ov'),st:$('
 function camBind(p,mode,expect,onCap){camClose();Object.assign(Cam,{p,mode,expect,onCap,paused:false,hist:[],lastSig:null,sawEmpty:true})}
 function status(msg,kind){const e=camEls();if(!e.st)return;const k=msg+kind;if(Cam.lastMsg===k)return;Cam.lastMsg=k;e.st.className='cam-status '+(kind||'');e.st.innerHTML=`<span class="dot"></span><span>${msg}</span>`}
 async function camStart(){
+  audioUnlock();
   const e=camEls();if(!e.v)return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){status('This browser can’t open the camera here. Use “Take a photo instead”.','bad');return}
   status('Opening camera…','');
@@ -729,7 +766,7 @@ function handle(r,G,single){
 }
 function capture(r,G,fills,sig){
   const rd=interpret(fills);sig=sig||rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
-  Cam.paused=true;Cam.hist=[];try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
+  Cam.paused=true;Cam.hist=[];if(Cam.mode!=='student'){beep('ok');buzz('ok')}
   status('Sheet scanned.','ok');
   Cam.onCap({cfg:r.cfg,roll:rd.roll,ans:rd.ans,base:rectify(G,r.H),sig});
 }
@@ -757,7 +794,39 @@ function drawRect(canvas,cur,mode){
 }
 function mountCanvas(cur,mode){const box=$('#resImg');if(!box)return;let c=box.querySelector('canvas');if(!c){c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;box.appendChild(c)}drawRect(c,cur,mode)}
 
-function onStudentCap(cap){UI.cur=Object.assign(cap,{editing:false});openModal(resultModal(),{wide:true,onClose:()=>{}});mountCanvas(UI.cur,'student')}
+// Why a scanned sheet needs the teacher to look at it (auto-save never saves these).
+function checkReasons(cur){
+  const r=[],valid=/^\d+$/.test(cur.roll),st=valid?studentMap()[cur.roll]:null;
+  if(!st)r.push(valid?`roll number ${cur.roll} is not in the class list`:'the roll number is unclear');
+  const multi=cur.ans.map((a,i)=>a.length>1?i+1:0).filter(Boolean);
+  if(multi.length)r.push(`question${multi.length>1?'s':''} ${multi.join(', ')} ha${multi.length>1?'ve':'s'} 2+ answers`);
+  if(st&&S.results[cur.roll])r.push(`${st.name} already has a saved score`);
+  return r;
+}
+function onStudentCap(cap){
+  UI.cur=Object.assign(cap,{editing:false});
+  const reasons=checkReasons(UI.cur);
+  if(S.autoSave&&!reasons.length){autoSaveCur(UI.cur);return}
+  UI.cur.reasons=S.autoSave?reasons:[];
+  if(reasons.length){beep('warn');buzz('warn')}else{beep('ok');buzz('ok')}
+  openModal(resultModal(),{wide:true,onClose:()=>{}});mountCanvas(UI.cur,'student');
+}
+function autoSaveCur(cur){
+  const st=studentMap()[cur.roll];
+  S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();
+  cur.autoSaved=true;cur.savedRoll=cur.roll;
+  beep('ok');buzz('ok');refreshSide();
+  const box=$('#camBox');if(!box){toast(`Saved: ${st.name}`);camResume(cur.sig);return}
+  hideAutoPop();
+  const g=grade(cur.ans),el=document.createElement('div');
+  el.className='autopop';el.id='autoPop';el.setAttribute('role','status');
+  el.innerHTML=`<div class="ap-top"><span class="ap-ok">✓ Saved</span><span class="ap-score"><b>${fmt(g.score)}</b> / ${fmt(maxScore())}</span></div>
+    <div class="ap-name">${esc(st.name)}</div><div class="ap-roll">Roll no. ${esc(cur.roll)} · ${g.c} correct · ${g.w} wrong · ${g.b} blank</div>
+    <div class="ap-btns"><button class="btn small" data-act="apUndo">Undo</button><button class="btn small" data-act="apEdit">Edit</button></div><div class="ap-bar"><i></i></div>`;
+  box.appendChild(el);
+  UI.ap={cur,timer:setTimeout(()=>{hideAutoPop();UI.ap=null;camResume(cur.sig)},2000)};
+}
+function hideAutoPop(){if(UI.ap)clearTimeout(UI.ap.timer);const e=$('#autoPop');if(e)e.remove()}
 function resultModal(){
   const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
   return `<div class="res">
@@ -772,7 +841,11 @@ function resInfo(){
   const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
   let warn='';
   if(!st)warn=`<div class="alert bad"><b>${validRoll?`Roll number ${esc(cur.roll)} is not in the class list.`:'The roll number is missing or has more than one shade in a column.'}</b><br>This score can’t be saved. Tap <b>Edit</b> to fix the roll number, or discard it.</div>`;
-  else if(prev)warn=`<div class="alert warn">${esc(st.name)} already has a saved score of <b>${fmt(grade(prev.ans).score)}</b>. Saving will replace it.</div>`;
+  else if(prev&&!(cur.autoSaved&&cur.roll===cur.savedRoll))warn=`<div class="alert warn">${esc(st.name)} already has a saved score of <b>${fmt(grade(prev.ans).score)}</b>. Saving will replace it.</div>`;
+  const multiQ=cur.ans.map((a,i)=>a.length>1?i+1:0).filter(Boolean);
+  if(cur.reasons&&cur.reasons.length)warn=`<div class="alert warn"><b>Auto-save paused for this sheet:</b> ${esc(cur.reasons.join('; '))}.</div>`+warn;
+  else if(multiQ.length)warn+=`<div class="alert warn">Question${multiQ.length>1?'s':''} ${multiQ.join(', ')} ha${multiQ.length>1?'ve':'s'} 2+ answers and ${multiQ.length>1?'are':'is'} counted wrong. Tap <b>Edit</b> if the scan misread them.</div>`;
+  if(cur.autoSaved)warn=`<div class="alert ok">This score was auto-saved. Change anything, then tap <b>Save score</b>. <b>Discard</b> removes it.</div>`+warn;
   return `<p class="eyebrow">Score</p><div class="score"><b>${fmt(g.score)}</b><span>/ ${fmt(maxScore())}</span></div>
   <div class="who">${st?esc(st.name):'<span class="dim">Unknown student</span>'}</div>
   <div class="dim">Roll no. <span class="mono">${st?esc(cur.roll):'—'}</span></div>
@@ -781,7 +854,7 @@ function resInfo(){
   ${warn}`;
 }
 function resButtons(){
-  const cur=UI.cur,ok=/^\d+$/.test(cur.roll)&&studentMap()[cur.roll],prev=ok&&S.results[cur.roll];
+  const cur=UI.cur,ok=/^\d+$/.test(cur.roll)&&studentMap()[cur.roll],prev=ok&&S.results[cur.roll]&&!(cur.autoSaved&&cur.roll===cur.savedRoll);
   return `<button class="btn" data-act="resDiscard">Discard</button><div class="grp"><button class="btn" data-act="resEdit">${cur.editing?'Hide editor':'Edit'}</button><button class="btn good" data-act="resSave" ${ok?'':'disabled'}>${prev?'Replace score':'Save score'}</button></div>`;
 }
 function resEditor(){
@@ -943,13 +1016,21 @@ const ACT={
   dlListEx:()=>saveFile('example classlist with roll number.csv','STUDENT NAME,ROLL NO\r\n"ABESIA, ALEXA JOHNNYHL FABIA",301\r\n"AGATON, JENILYN DE JESUS",302\r\n"AGUILOR, KIRLYN DAPILAGA",303\r\n"ALBALADEJO, ELIJAH JARED IGNACIO",304\r\n"ANDRES, JOHN RANDELLE VERANO",305\r\n','text/csv'),
   camStart:b=>{if(b&&b.dataset.p!=null&&b.dataset.p!==Cam.p)return;camStart()},
   camStop:()=>camStop(),
-  photo:()=>{const f=$('#filePhoto');f.value='';f.click()},
+  photo:()=>{audioUnlock();const f=$('#filePhoto');f.value='';f.click()},
   sens:b=>{S.sens=+b.dataset.v;persist();$('#scanSide').innerHTML=scanSide()},
-  resDiscard:()=>{const sig=UI.cur.sig;closeModal();camResume(sig);toast('Discarded. Move the sheet away before scanning it again.')},
+  resDiscard:()=>{const cur=UI.cur,sig=cur.sig;if(cur.autoSaved){delete S.results[cur.savedRoll];persist();refreshSide()}
+    closeModal();camResume(sig);toast(cur.autoSaved?'Score removed. Move the sheet away before scanning it again.':'Discarded. Move the sheet away before scanning it again.')},
+  tglAuto:()=>{S.autoSave=!S.autoSave;persist();refreshSide();toast(S.autoSave?'Auto-save is on. Sheets that need checking will still stop.':'Auto-save is off. You will confirm each sheet.')},
+  tglSound:()=>{S.sound=S.sound===false;persist();refreshSide();if(S.sound){audioUnlock();beep('ok')}},
+  apUndo:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;delete S.results[cur.savedRoll];persist();refreshSide();
+    toast('Undone. The score was not saved.');camResume(cur.sig)},
+  apEdit:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;UI.cur=cur;cur.editing=true;
+    openModal(resultModal(),{wide:true,onClose:()=>{}});mountCanvas(cur,'student')},
   resEdit:()=>{UI.cur.editing=!UI.cur.editing;const e=$('#resEdit');e.hidden=!UI.cur.editing;e.innerHTML=UI.cur.editing?resEditor():'';refreshRes();if(UI.cur.editing)$('#edRoll').focus()},
   edAns:b=>{const q=+b.dataset.q,o=+b.dataset.o,a=UI.cur.ans[q];const k=a.indexOf(o);if(k>=0)a.splice(k,1);else{a.push(o);a.sort()}
     b.closest('.krow').querySelectorAll('.bub').forEach((x,i)=>{x.classList.toggle('on',a.includes(i));x.setAttribute('aria-pressed',a.includes(i))});refreshRes()},
   resSave:()=>{const cur=UI.cur,st=studentMap()[cur.roll];if(!st)return;
+    if(cur.autoSaved&&cur.savedRoll&&cur.savedRoll!==cur.roll)delete S.results[cur.savedRoll];
     S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();
     const g=grade(cur.ans);closeModal();toast(`Saved: ${st.name}, ${fmt(g.score)}/${fmt(maxScore())}`);
     const side=$('#scanSide');if(side)side.innerHTML=scanSide();renderStepperOnly();camResume(cur.sig)},
