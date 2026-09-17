@@ -177,6 +177,14 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:12px 18px;border-radius:12px;font-weight:500;z-index:80;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
 .toast.bad{background:var(--bad);color:#fff}
 .spacer{height:14px}
+/* classes */
+.ctx{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:.88rem;color:var(--muted);margin:-4px 0 10px}
+.ctx b{color:var(--ink)}.ctx-sep{opacity:.5}.ctx .btn{margin-left:auto;min-height:32px;padding:4px 10px}
+.grp-h{font-size:1rem;margin:18px 0 10px;text-transform:none}
+.cls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.cls-card{display:grid;gap:2px;text-align:left;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;color:var(--ink)}
+.cls-card:hover{border-color:var(--accent)}.cls-card b{font-size:1.05rem}.cls-card span{font-size:.85rem;color:var(--muted)}
+.eyebrow a{color:inherit}
 /* auto-save popup + switches */
 .autopop{position:absolute;left:12px;right:12px;bottom:12px;background:var(--surface);color:var(--ink);border-radius:14px;padding:12px 14px 0;box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden;animation:apIn .18s ease-out;z-index:5}
 @keyframes apIn{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
@@ -205,8 +213,9 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
       <div class="logo" aria-hidden="true"><i></i><i class="f"></i><i></i><i class="f"></i><i></i><i></i></div>
       <div><b>Bubble Tsek</b><small>Bubble sheet checker for teachers</small></div>
     </div>
-    <button class="btn small" data-act="newExam" id="btnNew">New exam</button>
+    <div style="display:flex;gap:8px"><button class="btn small" data-act="goClasses" id="btnClasses">My classes</button><button class="btn small" data-act="newExam" id="btnNew">New exam</button></div>
   </header>
+  <div id="ctx"></div>
   <nav class="stepper" id="stepper" aria-label="Steps"></nav>
   <main id="main"></main>
 </div>
@@ -214,6 +223,8 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 <div class="toast" id="toast" hidden></div>
 <input type="file" id="fileKey" accept=".csv,.xlsx,.xls,text/csv" hidden>
 <input type="file" id="fileList" accept=".csv,.xlsx,.xls,text/csv" hidden>
+<input type="file" id="fileClasses" accept=".csv,.xlsx,.xls,text/csv" hidden>
+<input type="file" id="fileClass" accept=".csv,.xlsx,.xls,text/csv" hidden>
 <input type="file" id="filePhoto" accept="image/*" capture="environment" hidden>
 
 <script>
@@ -479,9 +490,9 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores',autoSave:false,sound:true}}
 function load(){try{const t=localStorage.getItem(STORE);if(t)return Object.assign(fresh(),JSON.parse(t))}catch(e){}return fresh()}
-function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}}
+function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}try{if(typeof libSaveExam==='function')libSaveExam()}catch(e){}}
 let S=load();
-const UI={keyErr:null,listErr:null,listWarn:null,cur:null};
+const UI={keyErr:null,listErr:null,listWarn:null,cur:null,view:'exam'};
 const fmt=n=>(Math.round(n*100)/100).toString();
 const rk=r=>String(r).padStart(S.cfg.roll,'0');
 const hasResults=()=>Object.keys(S.results).length>0;
@@ -508,7 +519,7 @@ function grade(ans){
 }
 function stepDone(i){return [S.sheetReady,keyComplete(),detailsDone(),S.students.length>0&&!listIssues().length,hasResults(),false][i]}
 function canOpen(i){for(let j=0;j<Math.min(i,4);j++)if(!stepDone(j))return false;return true}
-const STEPS=['Bubble sheet','Answer key','Exam details','Class list','Scan','Results'];
+const STEPS=['Bubble sheet','Answer key','Exam details','Class','Scan','Results'];
 
 /* ================= helpers ================= */
 let DL=null;try{const p=window.claude&&window.claude.use&&window.claude.use('downloads');if(p&&p.then)p.then(d=>{DL=d}).catch(()=>{})}catch(e){}
@@ -577,12 +588,15 @@ const ICON={
 
 /* ================= render ================= */
 function render(){
+  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():classesView();persist();return}
+  $('#stepper').hidden=false;syncClass();$('#ctx').innerHTML=ctxBar();
   if(S.step!==4)camClose();
   if(!canOpen(S.step)){let i=0;while(i<5&&stepDone(i))i++;S.step=Math.min(S.step,i)}
   $('#stepper').innerHTML='<ol>'+STEPS.map((t,i)=>{const cur=i===S.step,done=stepDone(i)&&!cur;
     return `<li><button class="st ${cur?'cur':''} ${done?'done':''}" data-act="go" data-i="${i}" ${canOpen(i)?'':'disabled'} ${cur?'aria-current="step"':''}><span class="st-b">${done?'✓':i+1}</span><span class="st-t">${t}</span></button></li>`}).join('')+'</ol>';
   $('#main').innerHTML=VIEW[S.step]();
-  if(S.step===4)bindScan();
+  if(S.step===4&&!isPastExam())bindScan();
+  if(S.step===5)setTimeout(refreshPicCount,0);
   persist();
 }
 const eyebrow=i=>`<p class="eyebrow">Step ${i+1} of 6</p>`;
@@ -624,30 +638,18 @@ return `<section class="panel">
 2(){return `<section class="panel">
   <div class="head">${eyebrow(2)}<h1>Exam details</h1><p class="lede">These go on your results and name the Excel file.</p></div>
   <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
-    <div class="field"><label for="x-name">Exam name</label><input class="txt" id="x-name" data-exam="name" value="${esc(S.exam.name)}" placeholder="e.g. Midterm"></div>
-    <div class="field"><label for="x-section">Class section</label><input class="txt" id="x-section" data-exam="section" value="${esc(S.exam.section)}" placeholder="e.g. Grade 10 - Rizal"></div>
+    <div class="field"><label for="x-name">Exam name</label><input class="txt" id="x-name" data-exam="name" value="${esc(S.exam.name)}" placeholder="e.g. QUIZ 1"><p class="help">Use the same name as the column in your grades sheet, e.g. QUIZ 1, ACTIVITY 3, MIDTERM EXAM.</p></div>
+    <div class="field"><label for="x-section">Class section</label><input class="txt" id="x-section" data-exam="section" value="${esc(S.exam.section)}" placeholder="e.g. BSP 3A" ${S.classId?'readonly':''}>${S.classId?`<p class="help">From the class you chose${S.exam.subject?' · '+esc(S.exam.subject):''}.</p>`:''}</div>
     <div class="field"><label for="x-date">Exam date</label><input class="txt" id="x-date" type="date" data-exam="date" value="${esc(S.exam.date)}"></div>
   </div>
   <p class="help" style="margin-top:16px">Excel file name: <span class="mono" id="fname">${esc(baseName())}.xlsx</span></p>
-  <div class="actions"><button class="btn" data-act="go" data-i="1">${ICON.back} Back</button><button class="btn primary" id="next2" data-act="go" data-i="3" ${detailsDone()?'':'disabled'}>Next: class list ${ICON.arrow}</button></div>
+  <div class="actions"><button class="btn" data-act="go" data-i="1">${ICON.back} Back</button><button class="btn primary" id="next2" data-act="go" data-i="3" ${detailsDone()?'':'disabled'}>Next: class ${ICON.arrow}</button></div>
 </section>`},
-3(){const iss=S.students.length?listIssues():[];
-return `<section class="panel">
-  <div class="head">${eyebrow(3)}<h1>Upload the class list</h1><p class="lede">A CSV file with two columns: <b>STUDENT NAME</b> and <b>ROLL NO</b>. Scores are saved to the student whose roll number is shaded on the sheet.</p></div>
-  <div class="toolbar"><button class="btn primary" data-act="pickList">${ICON.up} ${S.students.length?'Replace class list':'Upload class list'}</button><button class="btn" data-act="dlListEx">${ICON.dl} Download example CSV</button></div>
-  ${UI.listErr?`<div class="alert bad"><b>We couldn’t use that file.</b><ul>${UI.listErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
-  ${iss.length?`<div class="alert bad"><b>Please fix these in your file and upload it again.</b><ul>${iss.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${iss.length>8?`<li>…and ${iss.length-8} more</li>`:''}</ul></div>`:''}
-  ${UI.listWarn&&UI.listWarn.length?`<div class="alert warn"><ul>${UI.listWarn.slice(0,5).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
-  ${S.students.length?`<p style="margin:0 0 10px"><span class="pill ok">✓ ${S.students.length} students</span> <span class="dim" style="font-size:.9rem">${esc(S.listName)}</span></p>
-  <div class="tbl-wrap" style="max-height:420px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th></tr></thead><tbody>
-  ${S.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(s.roll))}</td><td>${esc(s.name)}</td></tr>`).join('')}</tbody></table></div>`
-  :`<div class="card dim">No class list yet. Tip: open the example file in Excel, replace the names and roll numbers, then save it as <b>CSV</b>.</div>`}
-  <div class="actions"><button class="btn" data-act="go" data-i="2">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="4" ${stepDone(3)?'':'disabled'}>${ICON.cam} Start scanning</button></div>
-</section>`},
+3(){return classStepView()},
 4(){return `<section class="panel">
-  <div class="head">${eyebrow(4)}<h1>Scan the answer sheets</h1><p class="lede">Lay a sheet flat in good light and hold the camera above it so all the black squares show. It scans on its own once the picture is steady.</p></div>
+  <div class="head">${eyebrow(4)}<h1>Scan the answer sheets</h1>${isPastExam()?'<div class="alert warn" style="margin-top:10px">This exam is in a past semester, so scanning is turned off. You can still view results and pictures.</div>':''}${S.classId?`<p class="scan-for"><span class="pill acc">Scanning: ${S.exam.subject?esc(S.exam.subject)+' · ':''}${esc(S.exam.section)}</span></p>`:''}<p class="lede">Lay a sheet flat in good light and hold the camera above it so all the black squares show. It scans on its own once the picture is steady.</p></div>
   <div class="scan">
-    <div>${camMarkup('')}</div>
+    <div>${isPastExam()?'<div class="card dim">Scanning is off for past semesters.</div>':camMarkup('')}</div>
     <aside class="side" id="scanSide">${scanSide()}</aside>
   </div>
   <div class="actions"><button class="btn" data-act="go" data-i="3">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="5">Done scanning: see results ${ICON.arrow}</button></div>
@@ -813,7 +815,7 @@ function onStudentCap(cap){
 }
 function autoSaveCur(cur){
   const st=studentMap()[cur.roll];
-  S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();
+  S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();savePic(cur);
   cur.autoSaved=true;cur.savedRoll=cur.roll;
   beep('ok');buzz('ok');refreshSide();
   const box=$('#camBox');if(!box){toast(`Saved: ${st.name}`);camResume(cur.sig);return}
@@ -912,7 +914,7 @@ const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 function scoresTable(st){
   return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
   ${st.rows.map((x,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>
-  ${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td><button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
+  ${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td style="white-space:nowrap"><button class="btn small" data-act="viewPic" data-r="${esc(rk(x.s.roll))}">Sheet</button> <button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
   :`<td class="num dim">—</td><td></td><td></td><td></td><td></td><td><span class="pill">Not scanned</span></td><td></td>`}</tr>`).join('')}</tbody></table></div>`;
 }
 function studentAnalysis(st,forReport){
@@ -941,6 +943,7 @@ function resultsView(){
   <div class="tiles"><div class="tile"><small>Scanned</small><b>${st.n}<span> / ${S.students.length}</span></b></div><div class="tile"><small>Average</small><b>${st.n?fmt(st.mean):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Highest</small><b>${st.n?fmt(st.hi):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Lowest</small><b>${st.n?fmt(st.lo):'—'}<span> / ${mx}</span></b></div></div>
   <div class="big-actions">
     ${NATIVE?`<button class="btn primary" data-act="shareExcel" ${st.n?'':'disabled'}>${ICON.share} Share results (Excel)</button>`:`<button class="btn primary" data-act="dlExcel" ${st.n?'':'disabled'}>${ICON.dl} Download results (Excel)</button>`}
+    <button class="btn" data-act="chartsExcel" ${st.n?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Charts (Excel)</button>
     <button class="btn" data-act="report" ${st.n?'':'disabled'}>${ICON.ext} View report</button>
     <button class="btn" data-act="tab" data-t="student">Analysis by student response</button>
     <button class="btn" data-act="tab" data-t="option">Analysis by option response</button>
@@ -948,6 +951,7 @@ function resultsView(){
   <div class="tabs" role="tablist">${[['scores','Scores'],['student','Analysis by student response'],['option','Analysis by option response']].map(([t,l])=>`<button class="tab ${S.tab===t?'on':''}" role="tab" aria-selected="${S.tab===t}" data-act="tab" data-t="${t}">${l}</button>`).join('')}</div>
   <div id="tabBody">${body}</div>
   <p class="help" style="margin-top:12px">Excel file: <span class="mono">${esc(baseName())}.xlsx</span></p>
+  <p class="help" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span id="picCount"></span><button class="btn small danger" id="picDelAll" data-act="picDelAll" hidden>Delete all pictures</button></p>
   <div class="actions"><button class="btn" data-act="go" data-i="4">${ICON.cam} Back to scanning</button><button class="btn" data-act="newExam">Start a new exam</button></div>
   </section>`;
 }
@@ -1018,11 +1022,11 @@ const ACT={
   camStop:()=>camStop(),
   photo:()=>{audioUnlock();const f=$('#filePhoto');f.value='';f.click()},
   sens:b=>{S.sens=+b.dataset.v;persist();$('#scanSide').innerHTML=scanSide()},
-  resDiscard:()=>{const cur=UI.cur,sig=cur.sig;if(cur.autoSaved){delete S.results[cur.savedRoll];persist();refreshSide()}
+  resDiscard:()=>{const cur=UI.cur,sig=cur.sig;if(cur.autoSaved){delete S.results[cur.savedRoll];picDel(cur.savedRoll);persist();refreshSide()}
     closeModal();camResume(sig);toast(cur.autoSaved?'Score removed. Move the sheet away before scanning it again.':'Discarded. Move the sheet away before scanning it again.')},
   tglAuto:()=>{S.autoSave=!S.autoSave;persist();refreshSide();toast(S.autoSave?'Auto-save is on. Sheets that need checking will still stop.':'Auto-save is off. You will confirm each sheet.')},
   tglSound:()=>{S.sound=S.sound===false;persist();refreshSide();if(S.sound){audioUnlock();beep('ok')}},
-  apUndo:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;delete S.results[cur.savedRoll];persist();refreshSide();
+  apUndo:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;delete S.results[cur.savedRoll];picDel(cur.savedRoll);persist();refreshSide();
     toast('Undone. The score was not saved.');camResume(cur.sig)},
   apEdit:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;UI.cur=cur;cur.editing=true;
     openModal(resultModal(),{wide:true,onClose:()=>{}});mountCanvas(cur,'student')},
@@ -1030,12 +1034,12 @@ const ACT={
   edAns:b=>{const q=+b.dataset.q,o=+b.dataset.o,a=UI.cur.ans[q];const k=a.indexOf(o);if(k>=0)a.splice(k,1);else{a.push(o);a.sort()}
     b.closest('.krow').querySelectorAll('.bub').forEach((x,i)=>{x.classList.toggle('on',a.includes(i));x.setAttribute('aria-pressed',a.includes(i))});refreshRes()},
   resSave:()=>{const cur=UI.cur,st=studentMap()[cur.roll];if(!st)return;
-    if(cur.autoSaved&&cur.savedRoll&&cur.savedRoll!==cur.roll)delete S.results[cur.savedRoll];
-    S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();
+    if(cur.autoSaved&&cur.savedRoll&&cur.savedRoll!==cur.roll){delete S.results[cur.savedRoll];picDel(cur.savedRoll)}
+    S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();savePic(cur);
     const g=grade(cur.ans);closeModal();toast(`Saved: ${st.name}, ${fmt(g.score)}/${fmt(maxScore())}`);
     const side=$('#scanSide');if(side)side.innerHTML=scanSide();renderStepperOnly();camResume(cur.sig)},
   tab:b=>{S.tab=b.dataset.t;persist();render();const t=$('.tabs');if(t)t.scrollIntoView({behavior:'smooth',block:'start'})},
-  delRes:b=>{const r=b.dataset.r,s=studentMap()[r];confirmBox('Remove this score?',`${esc(s?s.name:r)}’s saved score will be removed. You can scan the sheet again.`,[{label:'Remove score',cls:'danger',fn:()=>{delete S.results[r];render()}}])},
+  delRes:b=>{const r=b.dataset.r,s=studentMap()[r];confirmBox('Remove this score?',`${esc(s?s.name:r)}’s saved score will be removed. You can scan the sheet again.`,[{label:'Remove score',cls:'danger',fn:()=>{delete S.results[r];picDel(r);render()}}])},
   shareExcel:()=>{if(!window.XLSX){toast('The Excel tool did not load. Please restart the app.','bad');return}
     shareFile(baseName()+'.xlsx',excelBytes(),`${S.exam.name} – ${S.exam.section} results (${S.exam.date})`)},
   shareReport:()=>shareFile(baseName()+'_report.html',reportHTML(),`${S.exam.name} – ${S.exam.section} report`),
@@ -1044,10 +1048,7 @@ const ACT={
     if(NATIVE){openModal(`<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">Report</h2><div style="display:flex;gap:8px"><button class="btn small" data-act="shareReport">${ICON.share} Share</button><button class="btn small" data-act="closeModal">Close</button></div></div><iframe id="repFrame" title="Report" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>`,{wide:true});$('#repFrame').srcdoc=html;return}let w=null;try{w=window.open('','_blank')}catch(e){}
     if(w){try{w.document.open();w.document.write(html);w.document.close();return}catch(e){try{w.close()}catch(x){}}}
     try{const u=URL.createObjectURL(new Blob([html],{type:'text/html'}));const w2=window.open(u,'_blank');if(w2)return}catch(e){}
-    toast('Your browser blocked the new tab, so the report will download instead.');saveFile(baseName()+'_report.html',html,'text/html')},
-  newExam:()=>confirmBox('Start a new exam?','Saved scores for this exam will be cleared. Download the Excel file first if you still need it.',[
-    {label:'Keep class list',fn:()=>{const k={students:S.students,listName:S.listName,sens:S.sens,cfg:S.cfg};S=Object.assign(fresh(),k);fitKey();UI.keyErr=UI.listErr=UI.listWarn=null;render()}},
-    {label:'Start fresh',cls:'primary',fn:()=>{S=fresh();UI.keyErr=UI.listErr=UI.listWarn=null;render()}}])
+    toast('Your browser blocked the new tab, so the report will download instead.');saveFile(baseName()+'_report.html',html,'text/html')}
 };
 function renderStepperOnly(){const cur=S.step;$('#stepper').querySelectorAll('.st').forEach((b,i)=>{const done=stepDone(i)&&i!==cur;b.classList.toggle('done',done);b.disabled=!canOpen(i);b.querySelector('.st-b').textContent=done?'✓':i+1})}
 
@@ -1101,13 +1102,479 @@ $('#fileList').addEventListener('change',async e=>{
     if(!list.length&&!errs.length)errs.push('No students were found under the column names.');
     if(errs.length){UI.listErr=errs;UI.listWarn=null;render();alertBox('We couldn’t use that file',errs);return}
     S.students=list;S.listName=file.name;UI.listErr=null;UI.listWarn=warns;render();
-    const iss=listIssues();if(iss.length)alertBox('Please fix the class list',iss);else toast(`${list.length} students loaded`);
+    S.classId=null;const iss=listIssues();if(iss.length)alertBox('Please fix the class list',iss);else{toast(`${list.length} students loaded`);setTimeout(()=>ACT.saveAsClass(),300)}
   }catch(err){UI.listErr=[err.message];render();alertBox('We couldn’t use that file',UI.listErr)}
 });
 $('#filePhoto').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;
   if(!Cam.onCap){toast('Open the scanner first.','bad');return}photoPicked(f)});
+/* ================= PHASE 2: semesters, classes, pictures, charts ================= */
+const LIB_KEY='bubbletsek.lib.v2';
+const DEFAULT_SUBJECTS=['LIVING IN THE IT ERA','INFORMATION MANAGEMENT','INTRO TO GAME DESIGN'];
+const KNOWN_SECTIONS=['BSA 1C','BSAIS 1A','BSBA-MM2C','BSP 3A','BSP 3B','BSP 3C','BSP 3D','CRIM 1B','CRIM 1C','CRIM 1D','CRIM 1E','DA 3D','DA 3C','EMC 2D'];
+const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const normKey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const rollKey=r=>String(r).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+const GLOBAL_KEYS=['sens','autoSave','sound'];
+const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyFrom','exam','students','listName','results','tab'];
+
+let LIB=null;
+function libLoad(){try{const t=localStorage.getItem(LIB_KEY);if(t)return JSON.parse(t)}catch(e){}return null}
+function libSave(){try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){toast('Phone storage is full. Remove old pictures or exams.','bad')}}
+const curTerm=()=>LIB.terms.find(t=>t.id===LIB.curTerm);
+const termOf=id=>LIB.terms.find(t=>t.id===id);
+const getClass=id=>LIB.classes.find(c=>c.id===id);
+const classesOf=termId=>LIB.classes.filter(c=>c.termId===termId);
+const examsOf=classId=>Object.values(LIB.exams).filter(x=>x.data.classId===classId).sort((a,b)=>b.updatedAt-a.updatedAt);
+const isPastExam=()=>{const t=termOf(S.termId);return !!(t&&t.archived)};
+
+function gradeWith(ans,cfg,key){
+  let c=0,w=0,b=0,m=0;
+  const items=ans.map((a,i)=>{if(!a.length){b++;return 'B'}if(a.length>1){m++;w++;return 'M'}if(a[0]===key[i]){c++;return 'C'}w++;return 'W'});
+  return {c,w,b,m,items,score:Math.round((c*cfg.mc-w*cfg.mi)*100)/100};
+}
+function examSnapshot(){const d={};EXAM_KEYS.forEach(k=>d[k]=S[k]);return JSON.parse(JSON.stringify(d))}
+function libSaveExam(){
+  if(!LIB||!S.id)return;
+  const rs=Object.values(S.results||{}),max=S.cfg.q*S.cfg.mc;
+  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,S.key).score,0)/rs.length:0;
+  const has=rs.length||S.exam.name.trim()||S.sheetReady;
+  if(!has&&!LIB.exams[S.id])return;
+  LIB.exams[S.id]={id:S.id,data:examSnapshot(),updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
+  LIB.curExam=S.id;libSave();
+}
+function newExamState(classId){
+  const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);
+  const n=Object.assign(fresh(),g,{id:uid('x'),termId:LIB.curTerm,classId:classId||null});
+  const prevCfg=S.cfg;if(prevCfg)n.cfg={...prevCfg};
+  n.key=Array(n.cfg.q).fill(null);
+  return n;
+}
+function openExam(id){
+  const rec=LIB.exams[id];if(!rec)return;
+  persist();
+  const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);
+  S=Object.assign(fresh(),JSON.parse(JSON.stringify(rec.data)),g);
+  if(!S.key||S.key.length!==S.cfg.q)fitKey();
+  UI.view='exam';UI.keyErr=UI.listErr=UI.listWarn=null;
+  if(hasResults())S.step=5;
+  render();window.scrollTo({top:0});
+}
+function syncClass(){
+  if(!S.classId)return;const c=getClass(S.classId);
+  if(!c){S.classId=null;return}
+  S.students=c.students.map(s=>({name:s.name,roll:s.roll}));
+  S.exam.section=c.section;S.exam.subject=c.subject;S.listName=c.section;
+}
+function initLibrary(){
+  LIB=libLoad();
+  if(LIB&&LIB.terms&&LIB.terms.length){
+    LIB.exams=LIB.exams||{};LIB.classes=LIB.classes||[];
+    if(!S.id){S.id=uid('x');S.termId=LIB.curTerm}
+    if(!termOf(S.termId))S.termId=LIB.curTerm;
+    return;
+  }
+  const term={id:uid('t'),name:'1st Sem 2026-2027',archived:false,subjects:DEFAULT_SUBJECTS.slice()};
+  LIB={terms:[term],curTerm:term.id,classes:[],exams:{},curExam:null};
+  S.id=S.id||uid('x');S.termId=term.id;
+  if(S.students&&S.students.length){
+    const sec=(S.exam.section||'').trim()||'My class';
+    const known=KNOWN_SECTIONS.indexOf(sec);
+    const subject=known<0?'':(known<11?DEFAULT_SUBJECTS[0]:known<13?DEFAULT_SUBJECTS[1]:DEFAULT_SUBJECTS[2]);
+    const cls={id:uid('c'),termId:term.id,subject,section:sec,students:S.students.map(s=>({name:s.name,roll:s.roll})),updatedAt:Date.now()};
+    LIB.classes.push(cls);S.classId=cls.id;
+  }
+  libSave();libSaveExam();
+}
+
+/* ---------- scan pictures (IndexedDB) ---------- */
+const PicDB={_db:null,
+  open(){if(this._db)return Promise.resolve(this._db);return new Promise((res,rej)=>{
+    if(!window.indexedDB)return rej(new Error('no idb'));
+    const r=indexedDB.open('bubbletsek-pics',1);
+    r.onupgradeneeded=()=>{r.result.createObjectStore('pics')};
+    r.onsuccess=()=>{this._db=r.result;res(r.result)};r.onerror=()=>rej(r.error)})},
+  async tx(mode,fn){const db=await this.open();return new Promise((res,rej)=>{const t=db.transaction('pics',mode),st=t.objectStore('pics');let out;
+    Promise.resolve(fn(st)).then(v=>out=v);t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error)})},
+  put(k,v){return this.tx('readwrite',st=>{st.put(v,k)})},
+  get(k){return this.open().then(db=>new Promise((res,rej)=>{const r=db.transaction('pics').objectStore('pics').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}))},
+  del(k){return this.tx('readwrite',st=>{st.delete(k)})},
+  keys(prefix){return this.open().then(db=>new Promise((res,rej)=>{const r=db.transaction('pics').objectStore('pics').getAllKeys();r.onsuccess=()=>res(r.result.filter(k=>String(k).startsWith(prefix)));r.onerror=()=>rej(r.error)}))},
+  async delPrefix(prefix){const ks=await this.keys(prefix);await this.tx('readwrite',st=>{ks.forEach(k=>st.delete(k))});return ks.length}
+};
+const picKey=(roll,examId)=>(examId||S.id)+'|'+rollKey(roll);
+function savePic(cur){
+  try{const c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;c.getContext('2d').putImageData(cur.base,0,0);
+    c.toBlob(b=>{if(b)PicDB.put(picKey(cur.roll),b).catch(()=>{})},'image/jpeg',0.8)}catch(e){}
+}
+function picDel(roll,examId){PicDB.del(picKey(roll,examId)).catch(()=>{})}
+const picName=(st,roll)=>safeName(`${(S.exam.name||'EXAM').toUpperCase()} – ${S.exam.section||''} – ${st?st.name:'Student'} (${roll})`)+'.jpg';
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+
+async function viewPic(roll){
+  const st=studentMap()[roll];let blob=null;
+  try{blob=await PicDB.get(picKey(roll))}catch(e){}
+  if(!blob){alertBox('No picture saved',['This sheet was scanned before pictures were saved, or the picture was deleted. Scan the sheet again to save a picture.'],'warn');return}
+  const url=URL.createObjectURL(blob);UI.picView={roll,blob,url,name:picName(st,roll)};
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start;margin-bottom:10px"><div><p class="eyebrow">Scanned sheet</p><h2 style="margin:0">${esc(st?st.name:roll)}</h2><p class="dim" style="margin:2px 0 0">Roll no. ${esc(roll)} · ${esc(S.exam.name)} · ${esc(S.exam.section)}</p></div><button class="btn small" data-act="closeModal">Close</button></div>
+    <img src="${url}" alt="Scanned sheet of ${esc(st?st.name:roll)}" style="display:block;max-width:100%;max-height:65vh;margin:0 auto;border:1px solid var(--line);border-radius:8px">
+    <div class="actions"><button class="btn danger" data-act="picDelete">Delete picture</button><button class="btn primary" data-act="picShare">${NATIVE?ICON.share+' Share':ICON.dl+' Download'}</button></div>`,{wide:true,onClose:()=>{URL.revokeObjectURL(url);UI.picView=null}});
+}
+async function refreshPicCount(){
+  const el=$('#picCount');if(!el)return;
+  try{const n=(await PicDB.keys(S.id+'|')).length;el.textContent=n?`${n} scanned picture${n>1?'s':''} saved on this device`:'No pictures saved yet';$('#picDelAll').hidden=!n}catch(e){el.textContent=''}
+}
+
+/* ---------- context bar ---------- */
+function ctxBar(){
+  const t=termOf(S.termId),c=S.classId&&getClass(S.classId);
+  const bits=[t?esc(t.name)+(t.archived?' (past)':''):'',c?`${c.subject?esc(c.subject)+' · ':''}<b>${esc(c.section)}</b>`:'<span class="dim">No class chosen</span>',S.exam.name?esc(S.exam.name):'<span class="dim">Untitled exam</span>'].filter(Boolean);
+  return `<div class="ctx">${bits.join('<span class="ctx-sep">›</span>')}${c?`<button class="btn small" data-act="openClass" data-id="${c.id}">Open class</button>`:''}</div>`;
+}
+
+/* ---------- My classes screens ---------- */
+function termSelect(){
+  return `<select class="txt" id="termSel" data-term aria-label="Semester" style="max-width:260px">${LIB.terms.map(t=>`<option value="${t.id}" ${t.id===UI.termView?'selected':''}>${esc(t.name)}${t.archived?' (past)':''}</option>`).join('')}</select>`;
+}
+function classesView(){
+  UI.termView=UI.termView||LIB.curTerm;
+  const t=termOf(UI.termView)||curTerm(),past=t.archived,cls=classesOf(t.id);
+  const subjects=[...t.subjects];cls.forEach(c=>{if(c.subject&&!subjects.includes(c.subject))subjects.push(c.subject)});
+  const groups=subjects.map(s=>({s,list:cls.filter(c=>c.subject===s)}));
+  const noSub=cls.filter(c=>!c.subject);if(noSub.length)groups.push({s:'',list:noSub});
+  return `<section class="panel">
+  <div class="head" style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:end">
+    <div><p class="eyebrow">My classes</p><h1>${esc(t.name)}</h1><p class="lede">${cls.length} class${cls.length===1?'':'es'} · ${subjects.length} subject${subjects.length===1?'':'s'}${past?' · past semester (view only)':''}</p></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${termSelect()}${past?'':`<button class="btn small" data-act="newTerm">Start new semester</button>`}</div>
+  </div>
+  ${past?`<div class="alert warn">This is a past semester. You can open classes, results and pictures, but you can’t scan new sheets. <button class="btn small" data-act="viewCurTerm">Go to current semester</button></div>`:`
+  <div class="toolbar">
+    <button class="btn primary" data-act="pickClasses">${ICON.up} Upload class lists (CSV, all sections)</button>
+    <button class="btn" data-act="newClass">+ New class</button>
+    <button class="btn" data-act="addSubject">+ Add subject</button>
+    <button class="btn" data-act="dlClassesEx">${ICON.dl} Example CSV</button>
+  </div>`}
+  ${groups.map(g=>`<h2 class="grp-h">${g.s?esc(g.s):'No subject'} <span class="dim" style="font-weight:400;font-size:.9rem">${g.list.length} class${g.list.length===1?'':'es'}</span></h2>
+    ${g.list.length?`<div class="cls-grid">${g.list.map(c=>{const ex=examsOf(c.id);return `<button class="cls-card" data-act="openClass" data-id="${c.id}"><b>${esc(c.section)}</b><span>${c.students.length} student${c.students.length===1?'':'s'}</span><span>${ex.length} exam${ex.length===1?'':'s'}</span></button>`}).join('')}</div>`:`<p class="dim" style="margin:0 0 14px">No classes yet${past?'':' — upload a CSV or tap “New class”'}.</p>`}`).join('')}
+  <div class="actions"><button class="btn" data-act="backToExam">${ICON.back} Back to current exam</button><button class="btn primary" data-act="newExam" ${past?'disabled':''}>+ New exam</button></div>
+  </section>`;
+}
+function classView(){
+  const c=getClass(UI.classId);if(!c){UI.view='classes';return classesView()}
+  const t=termOf(c.termId),past=t&&t.archived,ex=examsOf(c.id);
+  const dup={};c.students.forEach(s=>{const k=rollKey(s.roll);dup[k]=(dup[k]||0)+1});
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="goClasses">My classes</a> › ${esc(t?t.name:'')}</p>
+    <h1>${esc(c.section)}</h1><p class="lede">${c.subject?esc(c.subject):'No subject'} · ${c.students.length} students${past?' · past semester (view only)':''}</p></div>
+  <div class="toolbar">
+    ${past?'':`<button class="btn primary" data-act="newExamFor" data-id="${c.id}">+ New exam for this class</button>
+    <button class="btn" data-act="pickClassCsv">${ICON.up} Upload student list</button>
+    <button class="btn" data-act="addStudent">+ Add student</button>
+    <button class="btn" data-act="editClass">Edit name / subject</button>`}
+    <button class="btn danger" data-act="delClass">Delete class</button>
+  </div>
+  <h2 class="grp-h">Exams <span class="dim" style="font-weight:400;font-size:.9rem">${ex.length}</span></h2>
+  ${ex.length?`<div class="tbl-wrap" style="margin-bottom:18px"><table><thead><tr><th>Exam</th><th>Date</th><th class="num">Scanned</th><th class="num">Average</th><th></th></tr></thead><tbody>
+    ${ex.map(x=>`<tr><td><b>${esc(x.data.exam.name||'Untitled exam')}</b>${x.id===S.id?' <span class="pill acc">open</span>':''}</td><td>${esc(x.data.exam.date||'')}</td><td class="num">${x.summary.n} / ${c.students.length}</td><td class="num">${x.summary.n?fmt(x.summary.avg)+' / '+fmt(x.summary.max):'—'}</td>
+    <td style="text-align:right"><button class="btn small" data-act="openExam" data-id="${x.id}">Open</button> <button class="btn small danger" data-act="delExam" data-id="${x.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="dim">No exams yet for this class.</p>'}
+  <h2 class="grp-h">Students <span class="dim" style="font-weight:400;font-size:.9rem">${c.students.length}</span></h2>
+  ${c.students.length?`<div class="tbl-wrap" style="max-height:460px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th></th></tr></thead><tbody>
+    ${c.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(s.roll)}${dup[rollKey(s.roll)]>1?' <span class="pill bad">duplicate</span>':''}</td><td>${esc(s.name)}</td><td style="text-align:right">${past?'':`<button class="btn small" data-act="editStudent" data-i="${i}">Edit</button> <button class="btn small danger" data-act="delStudent" data-i="${i}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>`
+  :'<div class="card dim">No students yet. Upload a CSV with STUDENT NAME and ROLL NO, or add students one by one.</div>'}
+  <div class="actions"><button class="btn" data-act="goClasses">${ICON.back} My classes</button><button class="btn" data-act="backToExam">Back to current exam</button></div>
+  </section>`;
+}
+function classStepView(){
+  const iss=S.students.length?listIssues():[],c=S.classId&&getClass(S.classId),locked=hasResults();
+  const t=termOf(S.termId)||curTerm(),cls=classesOf(t.id);
+  const bySub={};cls.forEach(x=>{(bySub[x.subject||'No subject']=bySub[x.subject||'No subject']||[]).push(x)});
+  return `<section class="panel">
+  <div class="head">${eyebrow(3)}<h1>Choose the class</h1><p class="lede">Pick a saved class, or upload a CSV with <b>STUDENT NAME</b> and <b>ROLL NO</b>. Scores are matched to students in this class only.</p></div>
+  ${c?`<div class="note"><p><b>${esc(c.section)}</b>${c.subject?' · '+esc(c.subject):''} · ${c.students.length} students</p><div style="display:flex;gap:8px;flex-wrap:wrap">${locked?'':'<button class="btn small" data-act="clearClass">Change class</button>'}<button class="btn small" data-act="openClass" data-id="${c.id}">Edit class</button></div></div>`
+  :`${cls.length?Object.keys(bySub).map(s=>`<h2 class="grp-h">${esc(s)}</h2><div class="cls-grid">${bySub[s].map(x=>`<button class="cls-card" data-act="chooseClass" data-id="${x.id}"><b>${esc(x.section)}</b><span>${x.students.length} students</span></button>`).join('')}</div>`).join(''):'<div class="card dim" style="margin-bottom:14px">No saved classes yet. Upload a CSV below, or add classes in <b>My classes</b>.</div>'}
+  <div class="toolbar" style="margin-top:14px"><button class="btn" data-act="pickList">${ICON.up} Upload CSV instead</button><button class="btn" data-act="dlListEx">${ICON.dl} Example CSV</button><button class="btn" data-act="goClasses">My classes</button></div>`}
+  ${UI.listErr?`<div class="alert bad"><b>We couldn’t use that file.</b><ul>${UI.listErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
+  ${iss.length?`<div class="alert bad"><b>Please fix these in the class list.</b><ul>${iss.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${iss.length>8?`<li>…and ${iss.length-8} more</li>`:''}</ul></div>`:''}
+  ${S.students.length?`<div class="tbl-wrap" style="max-height:380px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th></tr></thead><tbody>
+  ${S.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(s.roll))}</td><td>${esc(s.name)}</td></tr>`).join('')}</tbody></table></div>`:''}
+  <div class="actions"><button class="btn" data-act="go" data-i="2">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="4" ${stepDone(3)&&!isPastExam()?'':'disabled'}>${ICON.cam} Start scanning</button></div>
+</section>`;
+}
+
+/* ---------- CSV import: all sections ---------- */
+function parseClassRows(rows,needSection){
+  const errs=[];if(!rows.length)return {errs:['The file is empty.']};
+  const head=rows[0].map(c=>String(c).trim().toUpperCase());
+  const ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>h.includes('ROLL'));
+  const si=head.findIndex(h=>h.includes('SECTION')||h==='CLASS'),ui=head.findIndex(h=>h.includes('SUBJECT'));
+  if(ni<0||ri<0)return {errs:['The first row must have the column names STUDENT NAME and ROLL NO'+(needSection?' and CLASS SECTION':'')+'.']};
+  if(needSection&&si<0)return {errs:['This file has no CLASS SECTION column. Add one, or open a class and upload its list there.']};
+  const items=[];
+  rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim(),roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
+    if(!name&&!roll)return;
+    if(!roll){errs.push(`Line ${line}: ${name} has no roll number.`);return}
+    if(!/^\d+$/.test(roll)){errs.push(`Line ${line}: roll number “${roll}” should only have digits.`);return}
+    const section=si<0?'':String(r[si]??'').trim(),subject=ui<0?'':String(r[ui]??'').trim().toUpperCase();
+    if(needSection&&!section){errs.push(`Line ${line}: ${name} has no class section.`);return}
+    items.push({name:name||'(no name)',roll,section,subject});
+  });
+  return {errs,items,hasSubject:ui>=0};
+}
+function importPreview(items,hasSubject){
+  const t=curTerm(),groups={};
+  items.forEach(it=>{const k=normKey(it.section);(groups[k]=groups[k]||{section:it.section,subject:it.subject,students:[]}).students.push(it);if(!groups[k].subject&&it.subject)groups[k].subject=it.subject});
+  const list=Object.values(groups);
+  list.forEach(g=>{const seen={};g.dupes=[];g.students.forEach(s=>{const k=rollKey(s.roll);if(seen[k])g.dupes.push(s.roll);seen[k]=1});
+    g.existing=classesOf(t.id).find(c=>normKey(c.section)===normKey(g.section)&&(!g.subject||!c.subject||normKey(c.subject)===normKey(g.subject)))||null});
+  UI.importData={list};
+  const needSub=list.some(g=>!g.subject&&!(g.existing&&g.existing.subject));
+  const anyDupe=list.some(g=>g.dupes.length),anyExisting=list.some(g=>g.existing);
+  openModal(`<h2>Import class lists</h2><p class="dim" style="margin-top:0">Found <b>${list.length}</b> class${list.length===1?'':'es'} and <b>${items.length}</b> students for <b>${esc(t.name)}</b>.</p>
+  <div class="tbl-wrap" style="max-height:44vh;margin-bottom:12px"><table><thead><tr><th>Section</th><th>Subject</th><th class="num">Students</th><th>Status</th></tr></thead><tbody>
+  ${list.map(g=>`<tr><td><b>${esc(g.section)}</b></td><td>${esc(g.subject||(g.existing&&g.existing.subject)||'—')}</td><td class="num">${g.students.length}</td><td>${g.dupes.length?`<span class="pill bad">Roll ${esc([...new Set(g.dupes)].join(', '))} used twice</span>`:g.existing?'<span class="pill acc">Update existing</span>':'<span class="pill ok">New class</span>'}</td></tr>`).join('')}
+  </tbody></table></div>
+  ${anyDupe?'<div class="alert bad">Some sections have the same roll number twice. Fix those in your file and upload again — the other classes can still be imported.</div>':''}
+  ${needSub?`<div class="field"><label for="impSub">Subject for classes without one</label><select class="txt" id="impSub">${subjectOptions('')}</select></div>`:''}
+  ${anyExisting?`<div class="field" style="margin-top:12px"><label>For classes that already exist</label><div class="seg" id="impMode"><button class="on" data-act="impMode" data-v="update">Update list (keep scores)</button><button data-act="impMode" data-v="replace">Replace list</button></div><p class="help">Update adds new students and fixes names by roll number. Replace uses only the students in this file.</p></div>`:''}
+  <div class="actions" style="justify-content:flex-end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="doImport">Import ${list.filter(g=>!g.dupes.length).length} class${list.filter(g=>!g.dupes.length).length===1?'':'es'}</button></div>`,{wide:true});
+  UI.importMode='update';
+}
+function subjectOptions(sel){
+  const t=curTerm();return t.subjects.map(s=>`<option ${s===sel?'selected':''}>${esc(s)}</option>`).join('')+`<option value="__new">+ New subject…</option>`;
+}
+function mergeStudents(cls,incoming,mode){
+  if(mode==='replace'){cls.students=incoming.map(s=>({name:s.name,roll:s.roll}));return}
+  incoming.forEach(s=>{const ex=cls.students.find(x=>rollKey(x.roll)===rollKey(s.roll));if(ex)ex.name=s.name;else cls.students.push({name:s.name,roll:s.roll})});
+}
+
+/* ---------- charts (canvas → PNG) ---------- */
+const CH={ink:'#15202B',muted:'#5A6772',grid:'#E3E7EC',bar:'#2152A3',barSoft:'#A9BDE0',bg:'#FFFFFF'};
+function chartCanvas(w,h){const c=document.createElement('canvas');c.width=w*2;c.height=h*2;const x=c.getContext('2d');x.scale(2,2);x.fillStyle=CH.bg;x.fillRect(0,0,w,h);return [c,x]}
+const chFont=(sz,wt)=>`${wt||400} ${sz}px Lexend, "Segoe UI", Arial, sans-serif`;
+function roundBarV(x,px,py,w,h){const r=Math.min(4,w/2,h);x.beginPath();x.moveTo(px,py+h);x.lineTo(px,py+r);x.quadraticCurveTo(px,py,px+r,py);x.lineTo(px+w-r,py);x.quadraticCurveTo(px+w,py,px+w,py+r);x.lineTo(px+w,py+h);x.closePath();x.fill()}
+function roundBarH(x,px,py,w,h){const r=Math.min(4,h/2,w);x.beginPath();x.moveTo(px,py);x.lineTo(px+w-r,py);x.quadraticCurveTo(px+w,py,px+w,py+r);x.lineTo(px+w,py+h-r);x.quadraticCurveTo(px+w,py+h,px+w-r,py+h);x.lineTo(px,py+h);x.closePath();x.fill()}
+function niceMax(v){if(v<=5)return 5;const p=Math.pow(10,Math.floor(Math.log10(v))),n=v/p;return (n<=2?2:n<=5?5:10)*p}
+function chartTitle(x,t,sub){x.fillStyle=CH.ink;x.font=chFont(20,600);x.fillText(t,24,36);if(sub){x.fillStyle=CH.muted;x.font=chFont(13);x.fillText(sub,24,58)}}
+function columnChart({title,sub,labels,values,xTitle,yTitle}){
+  const W=900,H=480,[c,x]=chartCanvas(W,H);chartTitle(x,title,sub);
+  const L=64,R=24,T=84,B=70,pw=W-L-R,ph=H-T-B,max=niceMax(Math.max(1,...values));
+  x.font=chFont(12);x.textAlign='right';x.textBaseline='middle';
+  for(let i=0;i<=5;i++){const v=max*i/5,y=T+ph-ph*i/5;x.strokeStyle=CH.grid;x.lineWidth=1;x.beginPath();x.moveTo(L,y);x.lineTo(L+pw,y);x.stroke();x.fillStyle=CH.muted;x.fillText(fmt(v),L-8,y)}
+  const n=values.length,slot=pw/n,bw=Math.max(6,Math.min(64,slot-8));
+  values.forEach((v,i)=>{const h=ph*v/max,px=L+slot*i+(slot-bw)/2;x.fillStyle=CH.bar;if(h>0)roundBarV(x,px,T+ph-h,bw,h);
+    x.fillStyle=CH.ink;x.textAlign='center';x.textBaseline='bottom';x.font=chFont(12,600);if(v>0)x.fillText(String(v),px+bw/2,T+ph-h-4);
+    x.fillStyle=CH.muted;x.textBaseline='top';x.font=chFont(11);x.fillText(labels[i],px+bw/2,T+ph+8)});
+  x.strokeStyle=CH.muted;x.beginPath();x.moveTo(L,T+ph);x.lineTo(L+pw,T+ph);x.stroke();
+  x.fillStyle=CH.muted;x.font=chFont(12);x.textAlign='center';x.textBaseline='alphabetic';if(xTitle)x.fillText(xTitle,L+pw/2,H-18);
+  if(yTitle){x.save();x.translate(18,T+ph/2);x.rotate(-Math.PI/2);x.fillText(yTitle,0,0);x.restore()}
+  return c.toDataURL('image/png');
+}
+function barChartH({title,sub,labels,values,valueText,highlight,maxValue}){
+  const rowH=30,W=900,T=84,B=36,H=T+B+rowH*Math.max(1,values.length),[c,x]=chartCanvas(W,H);chartTitle(x,title,sub);
+  const L=170,R=90,pw=W-L-R,max=maxValue||niceMax(Math.max(1,...values));
+  x.font=chFont(12);x.textBaseline='middle';
+  for(let i=0;i<=4;i++){const px=L+pw*i/4;x.strokeStyle=CH.grid;x.beginPath();x.moveTo(px,T-6);x.lineTo(px,T+rowH*values.length);x.stroke();
+    x.fillStyle=CH.muted;x.textAlign='center';x.fillText(fmt(max*i/4)+(maxValue===100?'%':''),px,T+rowH*values.length+14)}
+  values.forEach((v,i)=>{const y=T+rowH*i,bh=rowH-8,w=pw*Math.min(v,max)/max;
+    x.fillStyle=(highlight==null||highlight===i)?CH.bar:CH.barSoft;if(w>0)roundBarH(x,L,y+4,w,bh);
+    x.fillStyle=CH.ink;x.textAlign='right';x.font=chFont(13,highlight===i?600:400);x.fillText(labels[i],L-10,y+rowH/2);
+    x.textAlign='left';x.font=chFont(12,600);x.fillText(valueText?valueText[i]:String(v),L+w+8,y+rowH/2)});
+  return c.toDataURL('image/png');
+}
+function loadExcelJS(){
+  if(window.ExcelJS)return Promise.resolve();
+  return new Promise((res,rej)=>{const s=document.createElement('script');s.src='lib/exceljs.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('ExcelJS failed to load'));document.head.appendChild(s)});
+}
+async function chartsBytes(){
+  await loadExcelJS();
+  const st=stats(),max=maxScore(),n=st.n,scores=st.done.map(x=>x.g.score);
+  const sd=n?Math.sqrt(scores.reduce((a,v)=>a+(v-st.mean)**2,0)/n):0;
+  const wb=new ExcelJS.Workbook();wb.creator='Bubble Tsek';
+  const head=(ws,row,vals)=>{const r=ws.getRow(row);r.values=vals;r.font={bold:true};r.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE2EBF8'}}})};
+  const title=`${(S.exam.name||'EXAM').toUpperCase()} · ${S.exam.section||''}`;
+  // Summary
+  const s1=wb.addWorksheet('Summary');s1.columns=[{width:30},{width:28}];
+  s1.getCell('A1').value='Bubble Tsek — Exam summary';s1.getCell('A1').font={bold:true,size:14};
+  const t=termOf(S.termId);
+  [['Exam',S.exam.name],['Subject',S.exam.subject||''],['Section',S.exam.section],['Date',S.exam.date],['Semester',t?t.name:''],['Questions',S.cfg.q],['Highest possible score',max],
+   ['Sheets scanned',`${n} of ${S.students.length}`],['Average score',n?+st.mean.toFixed(2):''],['Average %',n?+(st.mean/max*100).toFixed(1):''],['Median',n?st.med:''],['Highest',n?st.hi:''],['Lowest',n?st.lo:''],['Standard deviation',n?+sd.toFixed(2):'']]
+   .forEach((r,i)=>{s1.getRow(i+3).values=r;s1.getCell('A'+(i+3)).font={bold:true}});
+  const addImg=(ws,dataUrl,w,h)=>{const id=wb.addImage({base64:dataUrl,extension:'png'});ws.addImage(id,{tl:{col:0,row:1},ext:{width:w,height:h}})};
+  // Score distribution
+  const bins=10,cnt=Array(bins).fill(0),labels=[];
+  for(let i=0;i<bins;i++)labels.push(i===bins-1?'90–100%':`${i*10}–${i*10+9}%`);
+  scores.forEach(v=>{const p=max?Math.max(0,v)/max*100:0;cnt[Math.min(bins-1,Math.floor(p/10))]++});
+  const s2=wb.addWorksheet('Score distribution');
+  addImg(s2,columnChart({title:'Score distribution',sub:`${title} · ${n} sheets`,labels,values:cnt,xTitle:'Score (% of highest possible)',yTitle:'Students'}),900,480);
+  s2.getColumn(14).width=14;s2.getColumn(15).width=12;head(s2,2,[,,,,,,,,,,,,,'Score range','Students']);
+  labels.forEach((l,i)=>{s2.getRow(3+i).getCell(14).value=l;s2.getRow(3+i).getCell(15).value=cnt[i]});
+  // Hardest questions
+  const it=itemStats().map(r=>({q:r.i+1,wrong:r.n?Math.round((1-r.right/r.n)*100):0,key:LET[S.key[r.i]]})).sort((a,b)=>b.wrong-a.wrong||a.q-b.q);
+  const top=it.slice(0,Math.min(15,it.length));
+  const s3=wb.addWorksheet('Hardest questions');
+  addImg(s3,barChartH({title:'Hardest questions',sub:`${title} · % of students who got it wrong (top ${top.length})`,labels:top.map(r=>`Question ${r.q} (key ${r.key})`),values:top.map(r=>r.wrong),valueText:top.map(r=>r.wrong+'%'),maxValue:100}),900,84+36+30*top.length);
+  [14,15,16].forEach(ci=>s3.getColumn(ci).width=14);head(s3,2,[,,,,,,,,,,,,,'Question','Answer key','% wrong']);
+  it.forEach((r,i)=>{const row=s3.getRow(3+i);row.getCell(14).value=r.q;row.getCell(15).value=r.key;row.getCell(16).value=r.wrong});
+  // Class comparison: same exam name in this semester, other classes
+  const s4=wb.addWorksheet('Class comparison');
+  const nameK=normKey(S.exam.name);
+  const recs=Object.values(LIB.exams).filter(x=>x.data.termId===S.termId&&normKey(x.data.exam.name)===nameK&&x.summary&&x.summary.n);
+  const byClass={};recs.forEach(x=>{const c=getClass(x.data.classId),k=x.data.classId||x.id;const pct=x.summary.max?x.summary.avg/x.summary.max*100:0;
+    if(!byClass[k]||x.updatedAt>byClass[k].at)byClass[k]={label:c?c.section:(x.data.exam.section||'Unknown'),pct,n:x.summary.n,at:x.updatedAt,cur:x.id===S.id}});
+  const rowsC=Object.values(byClass).sort((a,b)=>b.pct-a.pct);
+  if(rowsC.length>=2){
+    addImg(s4,barChartH({title:`Class comparison — ${S.exam.name}`,sub:'Average score as % of highest possible · this class is darker',labels:rowsC.map(r=>r.label),values:rowsC.map(r=>+r.pct.toFixed(1)),valueText:rowsC.map(r=>`${r.pct.toFixed(1)}%  (${r.n})`),highlight:rowsC.findIndex(r=>r.cur),maxValue:100}),900,84+36+30*rowsC.length);
+    [14,15,16].forEach(ci=>s4.getColumn(ci).width=16);head(s4,2,[,,,,,,,,,,,,,'Class','Average %','Sheets']);
+    rowsC.forEach((r,i)=>{const row=s4.getRow(3+i);row.getCell(14).value=r.label;row.getCell(15).value=+r.pct.toFixed(1);row.getCell(16).value=r.n});
+  }else{
+    s4.getCell('A1').value=`Only one class has scanned “${S.exam.name}” this semester.`;
+    s4.getCell('A2').value='Give other sections an exam with the exact same name to compare them here.';
+  }
+  return await wb.xlsx.writeBuffer();
+}
+
+/* ---------- Phase 2 actions ---------- */
+function formModal(title,body,okLabel,okAct,danger){
+  openModal(`<h2>${esc(title)}</h2>${body}<div class="actions" style="justify-content:flex-end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn ${danger?'danger':'primary'}" data-act="${okAct}">${esc(okLabel)}</button></div>`);
+  const f=$('#modal input,#modal select');if(f)f.focus();
+}
+const sectionDatalist=()=>`<datalist id="knownSections">${KNOWN_SECTIONS.map(s=>`<option value="${esc(s)}">`).join('')}</datalist>`;
+function readSubject(selId){const sel=$('#'+selId);if(!sel)return '';if(sel.value==='__new'){const v=($('#'+selId+'New').value||'').trim().toUpperCase();if(v){const t=curTerm();if(!t.subjects.includes(v))t.subjects.push(v)}return v}return sel.value}
+function startNewExam(classId){
+  persist();S=newExamState(classId);syncClass();UI.view='exam';UI.keyErr=UI.listErr=UI.listWarn=null;
+  render();window.scrollTo({top:0});toast(classId?`New exam for ${getClass(classId).section}`:'New exam started');
+}
+Object.assign(ACT,{
+  goClasses:()=>{persist();UI.view='classes';UI.termView=UI.termView||LIB.curTerm;render();window.scrollTo({top:0})},
+  viewCurTerm:()=>{UI.termView=LIB.curTerm;render()},
+  backToExam:()=>{UI.view='exam';render();window.scrollTo({top:0})},
+  openClass:b=>{persist();UI.classId=b.dataset.id;UI.view='class';render();window.scrollTo({top:0})},
+  openExam:b=>openExam(b.dataset.id),
+  delExam:b=>{const id=b.dataset.id,x=LIB.exams[id];confirmBox('Delete this exam?',`“${esc(x.data.exam.name||'Untitled exam')}” and its ${x.summary.n} saved score${x.summary.n===1?'':'s'} and pictures will be deleted from this device.`,[{label:'Delete exam',cls:'danger',fn:()=>{
+    delete LIB.exams[id];PicDB.delPrefix(id+'|').catch(()=>{});libSave();if(id===S.id){S=newExamState(null)}render();toast('Exam deleted')}}])},
+  newExam:()=>{
+    const t=curTerm(),cls=classesOf(t.id);
+    const bySub={};cls.forEach(x=>{(bySub[x.subject||'No subject']=bySub[x.subject||'No subject']||[]).push(x)});
+    openModal(`<h2>New exam</h2><p class="dim" style="margin-top:0">Which class is it for? Your current exam stays saved in its class.</p>
+      ${cls.length?Object.keys(bySub).map(s=>`<h3 class="grp-h">${esc(s)}</h3><div class="cls-grid">${bySub[s].map(x=>`<button class="cls-card" data-act="newExamPick" data-id="${x.id}"><b>${esc(x.section)}</b><span>${x.students.length} students</span></button>`).join('')}</div>`).join(''):'<div class="card dim">No classes yet. You can upload a class list during the exam.</div>'}
+      <div class="actions"><button class="btn" data-act="closeModal">Cancel</button><button class="btn" data-act="newExamPick" data-id="">Choose class later</button></div>`,{wide:true});
+  },
+  newExamPick:b=>{closeModal();startNewExam(b.dataset.id||null)},
+  newExamFor:b=>startNewExam(b.dataset.id),
+  chooseClass:b=>{if(hasResults())return;S.classId=b.dataset.id;syncClass();UI.listErr=null;render();const iss=listIssues();if(iss.length)alertBox('Please check this class list',iss)},
+  clearClass:()=>{if(hasResults())return;S.classId=null;S.students=[];render()},
+  newTerm:()=>{
+    formModal('Start a new semester',`<p class="dim" style="margin-top:0">The current semester moves to <b>past semesters</b>. Its classes, results and pictures stay viewable.</p>
+      <div class="field"><label for="ntName">New semester name</label><input class="txt" id="ntName" placeholder="e.g. 2nd Sem 2026-2027" value="${esc(suggestTermName(curTerm().name))}"></div>
+      <label style="display:flex;gap:10px;align-items:center;margin-top:14px;font-weight:500"><input type="checkbox" id="ntSubs" checked style="width:20px;height:20px"> Copy my subjects</label>
+      <label style="display:flex;gap:10px;align-items:center;margin-top:10px;font-weight:500"><input type="checkbox" id="ntClasses" style="width:20px;height:20px"> Copy classes and student lists</label>`,'Start new semester','doNewTerm');
+  },
+  doNewTerm:()=>{
+    const name=($('#ntName').value||'').trim();if(!name){toast('Type a name for the new semester.','bad');return}
+    if(LIB.terms.some(t=>normKey(t.name)===normKey(name))){toast('A semester with that name already exists.','bad');return}
+    const old=curTerm(),copySubs=$('#ntSubs').checked,copyCls=$('#ntClasses').checked;
+    const nt={id:uid('t'),name,archived:false,subjects:copySubs?old.subjects.slice():[]};
+    persist();old.archived=true;LIB.terms.push(nt);LIB.curTerm=nt.id;
+    if(copyCls)classesOf(old.id).forEach(c=>LIB.classes.push({id:uid('c'),termId:nt.id,subject:c.subject,section:c.section,students:c.students.map(s=>({...s})),updatedAt:Date.now()}));
+    libSave();S=newExamState(null);UI.termView=nt.id;closeModal();render();toast(`${name} started`);
+  },
+  addSubject:()=>formModal('Add a subject','<div class="field"><label for="asName">Subject name</label><input class="txt" id="asName" placeholder="e.g. WEB DEVELOPMENT"></div>','Add subject','doAddSubject'),
+  doAddSubject:()=>{const v=($('#asName').value||'').trim().toUpperCase();if(!v)return;const t=curTerm();if(!t.subjects.includes(v))t.subjects.push(v);libSave();closeModal();render();toast('Subject added')},
+  newClass:()=>{UI.editClassId=null;formModal('New class',classFormBody('',''),'Create class','doSaveClass')},
+  editClass:()=>{const c=getClass(UI.classId);UI.editClassId=c.id;formModal('Edit class',classFormBody(c.subject,c.section),'Save','doSaveClass')},
+  doSaveClass:()=>{
+    const subject=readSubject('ncSub'),section=($('#ncSec').value||'').trim();
+    if(!section){toast('Type the section name.','bad');return}
+    const t=curTerm(),clash=classesOf(t.id).find(c=>c.id!==UI.editClassId&&normKey(c.section)===normKey(section)&&normKey(c.subject)===normKey(subject));
+    if(clash){toast(`${section} already exists for this subject.`,'bad');return}
+    if(UI.editClassId){const c=getClass(UI.editClassId);c.subject=subject;c.section=section;c.updatedAt=Date.now()}
+    else{const c={id:uid('c'),termId:t.id,subject,section,students:[],updatedAt:Date.now()};LIB.classes.push(c);UI.classId=c.id}
+    libSave();if(S.classId)syncClass();closeModal();UI.view='class';render();toast('Class saved');
+  },
+  delClass:()=>{const c=getClass(UI.classId),ex=examsOf(c.id);confirmBox(`Delete ${c.section}?`,`This deletes the class list and its ${ex.length} exam${ex.length===1?'':'s'}, scores and pictures from this device.`,[{label:'Delete class',cls:'danger',fn:()=>{
+    ex.forEach(x=>{delete LIB.exams[x.id];PicDB.delPrefix(x.id+'|').catch(()=>{})});LIB.classes=LIB.classes.filter(x=>x.id!==c.id);
+    if(S.classId===c.id||ex.some(x=>x.id===S.id))S=newExamState(null);libSave();UI.view='classes';render();toast('Class deleted')}}])},
+  addStudent:()=>{UI.editStudent=-1;formModal('Add student',studentFormBody('',''),'Add','doSaveStudent')},
+  editStudent:b=>{const c=getClass(UI.classId),s=c.students[+b.dataset.i];UI.editStudent=+b.dataset.i;formModal('Edit student',studentFormBody(s.name,s.roll),'Save','doSaveStudent')},
+  doSaveStudent:()=>{
+    const c=getClass(UI.classId),name=($('#stName').value||'').trim(),roll=($('#stRoll').value||'').trim();
+    if(!name||!/^\d+$/.test(roll)){toast('Enter a name and a roll number (digits only).','bad');return}
+    if(c.students.some((s,i)=>i!==UI.editStudent&&rollKey(s.roll)===rollKey(roll))){toast(`Roll number ${roll} is already used in ${c.section}.`,'bad');return}
+    if(UI.editStudent>=0)c.students[UI.editStudent]={name,roll};else c.students.push({name,roll});
+    c.updatedAt=Date.now();libSave();if(S.classId===c.id)syncClass();closeModal();render();toast('Student saved');
+  },
+  delStudent:b=>{const c=getClass(UI.classId),i=+b.dataset.i,s=c.students[i];confirmBox('Remove student?',`${esc(s.name)} (${esc(s.roll)}) will be removed from ${esc(c.section)}. Saved scores stay in past exams.`,[{label:'Remove',cls:'danger',fn:()=>{c.students.splice(i,1);libSave();if(S.classId===c.id)syncClass();render()}}])},
+  pickClasses:()=>$('#fileClasses').click(),
+  pickClassCsv:()=>$('#fileClass').click(),
+  dlClassesEx:()=>saveFile('example class lists all sections.csv','STUDENT NAME,ROLL NO,CLASS SECTION,SUBJECT\r\n"ALFONSO, MCNIEL T.",801,DA 3D,INFORMATION MANAGEMENT\r\n"AYNERA, CEDRIC A.",802,DA 3D,INFORMATION MANAGEMENT\r\n"DELA CRUZ, MARIA",301,BSP 3A,LIVING IN THE IT ERA\r\n"SANTOS, JUAN",301,BSP 3B,LIVING IN THE IT ERA\r\n','text/csv'),
+  impMode:b=>{UI.importMode=b.dataset.v;$('#impMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))},
+  doImport:()=>{
+    const t=curTerm(),fallback=$('#impSub')?readSubject('impSub'):'';let made=0,updated=0;
+    UI.importData.list.forEach(g=>{if(g.dupes.length)return;
+      const subject=g.subject||(g.existing&&g.existing.subject)||fallback;
+      if(subject&&!t.subjects.includes(subject))t.subjects.push(subject);
+      if(g.existing){mergeStudents(g.existing,g.students,UI.importMode);if(!g.existing.subject)g.existing.subject=subject;g.existing.updatedAt=Date.now();updated++}
+      else{LIB.classes.push({id:uid('c'),termId:t.id,subject,section:g.section,students:g.students.map(s=>({name:s.name,roll:s.roll})),updatedAt:Date.now()});made++}});
+    libSave();if(S.classId)syncClass();closeModal();UI.view='classes';UI.termView=t.id;render();
+    toast(`${made} new class${made===1?'':'es'}${updated?`, ${updated} updated`:''}`);
+  },
+  saveAsClass:()=>{formModal('Save this list as a class?',`<p class="dim" style="margin-top:0">Next time, just pick the class instead of uploading the file again.</p>${classFormBody('',S.exam.section||'')}`,'Save class','doSaveListClass')},
+  doSaveListClass:()=>{
+    const subject=readSubject('ncSub'),section=($('#ncSec').value||'').trim();if(!section){toast('Type the section name.','bad');return}
+    const t=termOf(S.termId)||curTerm();let c=classesOf(t.id).find(x=>normKey(x.section)===normKey(section)&&normKey(x.subject)===normKey(subject));
+    if(c){mergeStudents(c,S.students,'replace')}else{c={id:uid('c'),termId:t.id,subject,section,students:S.students.map(s=>({...s})),updatedAt:Date.now()};LIB.classes.push(c)}
+    S.classId=c.id;syncClass();libSave();closeModal();render();toast(`Saved as class ${section}`);
+  },
+  viewPic:b=>viewPic(b.dataset.r),
+  picShare:async()=>{const v=UI.picView;if(!v)return;const buf=await v.blob.arrayBuffer();shareOrSave(v.name,buf,'image/jpeg',v.name.replace(/\.jpg$/,''))},
+  picDelete:()=>{const v=UI.picView;if(!v)return;picDel(v.roll);closeModal();toast('Picture deleted');setTimeout(refreshPicCount,200)},
+  picDelAll:()=>confirmBox('Delete all pictures for this exam?','Scores stay saved. Only the scanned pictures are removed from this device.',[{label:'Delete pictures',cls:'danger',fn:async()=>{const n=await PicDB.delPrefix(S.id+'|').catch(()=>0);toast(`${n} picture${n===1?'':'s'} deleted`);refreshPicCount()}}]),
+  chartsExcel:async b=>{
+    if(!stats().n)return;b.disabled=true;const old=b.innerHTML;b.textContent='Making charts…';
+    try{const bytes=await chartsBytes();await shareOrSave(baseName()+'_Charts.xlsx',bytes,XLSX_MIME,`${S.exam.name} – ${S.exam.section} charts`)}
+    catch(e){alertBox('Couldn’t make the charts file',[String(e&&e.message||e)])}
+    finally{b.disabled=false;b.innerHTML=old}
+  }
+});
+function suggestTermName(n){const m=String(n).match(/^(1st|2nd)\s+Sem\s+(\d{4})-(\d{4})$/i);if(!m)return '';return /^1st$/i.test(m[1])?`2nd Sem ${m[2]}-${m[3]}`:`1st Sem ${+m[2]+1}-${+m[3]+1}`}
+function classFormBody(subject,section){
+  return `<div class="field"><label for="ncSub">Subject</label><select class="txt" id="ncSub">${subjectOptions(subject)}</select>
+    <input class="txt" id="ncSubNew" placeholder="New subject name" style="margin-top:8px" hidden></div>
+    <div class="field" style="margin-top:12px"><label for="ncSec">Section name</label><input class="txt" id="ncSec" list="knownSections" value="${esc(section)}" placeholder="e.g. BSP 3A">${sectionDatalist()}
+    <p class="help">Use the same name as the tab in your grades sheet.</p></div>`;
+}
+function studentFormBody(name,roll){
+  return `<div class="field"><label for="stName">Student name</label><input class="txt" id="stName" value="${esc(name)}" placeholder="LASTNAME, FIRSTNAME M."></div>
+    <div class="field" style="margin-top:12px"><label for="stRoll">Roll number</label><input class="txt mono" id="stRoll" inputmode="numeric" value="${esc(roll)}" placeholder="e.g. 301"></div>`;
+}
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.id==='termSel'){UI.termView=t.value;render()}
+  if(t.id==='ncSub'||t.id==='impSub'){const n=$('#'+t.id+'New');if(n){n.hidden=t.value!=='__new';if(!n.hidden)n.focus()}}
+});
+$('#fileClasses').addEventListener('change',async e=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  try{const p=parseClassRows(await readRows(file),true);
+    if(!p.items||!p.items.length){alertBox('We couldn’t use that file',p.errs.length?p.errs:['No students were found.']);return}
+    importPreview(p.items,p.hasSubject);
+    if(p.errs.length){const m=$('#modal .sheet');if(m)m.insertAdjacentHTML('afterbegin',`<div class="alert warn"><b>${p.errs.length} line${p.errs.length>1?'s were':' was'} skipped:</b><ul>${p.errs.slice(0,5).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`)}
+  }catch(err){alertBox('We couldn’t use that file',[err.message])}
+});
+$('#fileClass').addEventListener('change',async e=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  const c=getClass(UI.classId);if(!c)return;
+  try{const p=parseClassRows(await readRows(file),false);
+    if(!p.items||!p.items.length){alertBox('We couldn’t use that file',p.errs.length?p.errs:['No students were found.']);return}
+    const seen={},d=[];p.items.forEach(s=>{const k=rollKey(s.roll);if(seen[k])d.push(s.roll);seen[k]=1});
+    if(d.length){alertBox('Same roll number twice',[`Roll number${d.length>1?'s':''} ${[...new Set(d)].join(', ')} appear${d.length>1?'':'s'} more than once. Fix the file and upload again.`]);return}
+    const apply=mode=>{mergeStudents(c,p.items,mode);c.updatedAt=Date.now();libSave();if(S.classId===c.id)syncClass();render();toast(`${c.students.length} students in ${c.section}`)};
+    if(!c.students.length)apply('replace');
+    else confirmBox('Update or replace?',`${esc(c.section)} already has ${c.students.length} students. The file has ${p.items.length}.`,[{label:'Update (keep scores)',fn:()=>apply('update')},{label:'Replace list',cls:'primary',fn:()=>apply('replace')}]);
+  }catch(err){alertBox('We couldn’t use that file',[err.message])}
+});
+initLibrary();
+
 if(S.key.length!==S.cfg.q)fitKey();
-if(NATIVE){$('#fileKey').removeAttribute('accept');$('#fileList').removeAttribute('accept');document.documentElement.classList.add('native')}
+if(NATIVE){['fileKey','fileList','fileClasses','fileClass'].forEach(id=>$('#'+id).removeAttribute('accept'));document.documentElement.classList.add('native')}
 render();
 </script>
 </body>
