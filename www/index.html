@@ -401,6 +401,14 @@ function analyze(G){
   const f=Math.max(1,Math.ceil(Math.max(G.w,G.h)/800)),Sm=downsample(G,f);
   const quads=pickQuads(findSquares(Sm));
   if(!quads.length)return {ok:false,reason:'markers'};
+  return locate(G,quads,f);
+}
+// Live camera: one medium-size grab per frame; corner squares are found on a half-size copy.
+function camFrame(v){
+  const G=toGray(v,v.videoWidth,v.videoHeight,1280,Cam.cv);
+  return {r:analyze(G),G};
+}
+function locate(G,quads,f){
   const box=[[0,0],[FW,0],[FW,FH],[0,FH]];
   for(const q of quads){
     const P=q.map(p=>({x:(p.x+.5)*f-.5,y:(p.y+.5)*f-.5}));
@@ -416,6 +424,19 @@ function bubbleFill(G,H,u,v,BD){
   ring.sort((a,b)=>a-b);const white=ring[11],thr=white*0.68,r=BD*0.34/3;
   let n=0,dk=0;for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){if(i*i+j*j>10)continue;n++;if(sampleAt(G,H,u+i*r,v+j*r)<thr)dk++}
   return white<40?0:dk/n;
+}
+// How crisp the picture is: thin circle outlines fade quickly when the camera shakes or is out of focus.
+function sharpness(G,H,cfg){
+  const g=geo(cfg),R=g.d/2;let sum=0,n=0;
+  const list=g.roll.flat().concat(g.ans.slice(0,10).flatMap(a=>a.opts));
+  for(let k=0;k<list.length;k+=2){const b=list[k];
+    let lo=255,hi=0;for(let a=0;a<12;a++){const t=a*Math.PI/6;
+      lo=Math.min(lo,sampleAt(G,H,b.u+Math.cos(t)*R,b.v+Math.sin(t)*R));
+      hi=Math.max(hi,sampleAt(G,H,b.u+Math.cos(t)*(R+.8),b.v+Math.sin(t)*(R+.8)))}
+    const inner=sampleAt(G,H,b.u,b.v);if(inner<hi*0.7)continue;
+    const ring=[];for(let a=0;a<12;a++){const t=a*Math.PI/6;ring.push(sampleAt(G,H,b.u+Math.cos(t)*R,b.v+Math.sin(t)*R))}
+    ring.sort((x,y)=>x-y);sum+=(hi-ring[6])/Math.max(hi,1);n++}
+  return n?sum/n:0;
 }
 function readFills(G,H,cfg){
   const g=geo(cfg),D=g.d;
@@ -638,7 +659,7 @@ function scanSide(){
 }
 
 /* ================= camera ================= */
-const Cam={stream:null,p:'',mode:'student',expect:null,onCap:null,paused:false,running:false,hist:[],lastSig:null,sawEmpty:true,timer:null,cv:document.createElement('canvas'),lastMsg:''};
+const Cam={stream:null,p:'',mode:'student',expect:null,onCap:null,paused:false,running:false,hist:[],lastSig:null,sawEmpty:true,timer:null,cv:document.createElement('canvas'),cvS:document.createElement('canvas'),lastMsg:''};
 function camEls(){const p=Cam.p;return {v:$('#'+p+'vid'),ov:$('#'+p+'ov'),st:$('#'+p+'camStatus'),idle:$('#'+p+'camIdle'),stop:$('#'+p+'bStop'),cont:$('#'+p+'bCont')}}
 function camBind(p,mode,expect,onCap){camClose();Object.assign(Cam,{p,mode,expect,onCap,paused:false,hist:[],lastSig:null,sawEmpty:true})}
 function status(msg,kind){const e=camEls();if(!e.st)return;const k=msg+kind;if(Cam.lastMsg===k)return;Cam.lastMsg=k;e.st.className='cam-status '+(kind||'');e.st.innerHTML=`<span class="dot"></span><span>${msg}</span>`}
@@ -650,6 +671,7 @@ async function camStart(){
   catch(err){const n=err&&err.name;
     status(n==='NotAllowedError'||n==='SecurityError'?'Camera access was blocked. Allow the camera in your browser settings, or use “Take a photo instead”.':n==='NotFoundError'?'No camera was found on this device. Use “Take a photo instead”.':'The camera could not start. Close other apps using it, or use “Take a photo instead”.','bad');return}
   const e2=camEls();if(!e2.v){camClose();return}
+  try{const tr=Cam.stream.getVideoTracks()[0],cp=tr.getCapabilities?tr.getCapabilities():{};if(cp.focusMode&&cp.focusMode.includes('continuous'))await tr.applyConstraints({advanced:[{focusMode:'continuous'}]})}catch(x){}
   e2.v.srcObject=Cam.stream;e2.v.hidden=false;e2.idle.hidden=true;try{await e2.v.play()}catch(x){}
   Cam.running=true;Cam.paused=false;Cam.hist=[];Cam.lastMsg='';if(e2.stop)e2.stop.hidden=false;if(e2.cont)e2.cont.hidden=true;
   status('Looking for the sheet…','');tick();
@@ -667,9 +689,9 @@ function tick(){
   if(!Cam.running)return;
   const e=camEls();if(!e.v){camClose();return}
   if(!Cam.paused&&e.v.readyState>=2&&e.v.videoWidth){
-    try{const G=toGray(e.v,e.v.videoWidth,e.v.videoHeight,1600,Cam.cv);const r=analyze(G);drawOverlay(r,G);handle(r,G,false)}catch(x){console.error(x)}
+    try{const {r,G}=camFrame(e.v);drawOverlay(r,G);handle(r,G,false)}catch(x){console.error(x)}
   }
-  Cam.timer=setTimeout(tick,80);
+  Cam.timer=setTimeout(tick,Cam.paused?150:10);
 }
 function drawOverlay(r,G){
   const e=camEls();if(!e.ov||!e.v)return;const w=e.v.clientWidth,h=e.v.clientHeight,dpr=window.devicePixelRatio||1;
@@ -680,7 +702,7 @@ function drawOverlay(r,G){
 }
 function handle(r,G,single){
   if(!r.ok){
-    Cam.hist=[];Cam.sawEmpty=true;
+    Cam.hist=[];Cam.sawEmpty=true;Cam.best=0;
     const m=r.reason==='markers'?'Looking for the sheet… Make sure all 4 corner squares are in view.':'I see the squares, but can’t read the sheet. Hold steady and avoid shadows or glare.';
     if(single)alertBox('Couldn’t read this photo',[r.reason==='markers'?'The four black corner squares were not found. Take the photo from straight above with the whole sheet in view.':'The sheet was found but the code strip at the bottom could not be read. Retake the photo in brighter, even light.']);
     else status(m,'');return;
@@ -690,15 +712,19 @@ function handle(r,G,single){
     Cam.hist=[];if(single)alertBox('This sheet doesn’t match your exam',[m]);else status(m,'bad');return;
   }
   if(r.pxmm<2&&!single){Cam.hist=[];status('Move the camera a little closer to the sheet.','warn');return}
+  if(!single){
+    const sh=sharpness(G,r.H,r.cfg);Cam.best=Math.max(sh,(Cam.best||0)*0.85);
+    if(sh<0.2||sh<Cam.best*0.75){status('Hold still… the picture is a bit blurry.','warn');return}
+  }
   const fills=readFills(G,r.H,r.cfg);
   if(single){capture(r,G,fills);return}
-  const last=Cam.hist[Cam.hist.length-1];
-  if(last&&Math.max(...last.c.map((p,i)=>dist(p,r.corners[i])))>0.02*G.w)Cam.hist=[];
-  Cam.hist.push({c:r.corners,fills});
-  if(Cam.hist.length<3){status('Sheet found. Hold still…','ok');return}
-  const h3=Cam.hist.slice(-3),avg={s:fills.s,roll:fills.roll.map((c,i)=>c.map((_,j)=>h3.reduce((s,h)=>s+h.fills.roll[i][j],0)/3)),ans:fills.ans.map((c,i)=>c.map((_,j)=>h3.reduce((s,h)=>s+h.fills.ans[i][j],0)/3))};
-  const rd=interpret(avg),sig=rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
+  const rd=interpret(fills),sig=rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
   if(Cam.lastSig&&sig===Cam.lastSig&&!Cam.sawEmpty){status('Done with this sheet. Put the next sheet in view.','ok');Cam.hist=[];return}
+  // Scan as soon as two looks at the sheet agree. Each look is corrected for tilt on its own, so a shaky hand is fine.
+  Cam.hist.push({fills,sig});if(Cam.hist.length>5)Cam.hist.shift();
+  const same=Cam.hist.filter(h=>h.sig===sig);
+  if(same.length<2){status('Sheet found. Hold still…','ok');return}
+  const n=same.length,avg={s:fills.s,roll:fills.roll.map((c,i)=>c.map((_,j)=>same.reduce((a,h)=>a+h.fills.roll[i][j],0)/n)),ans:fills.ans.map((c,i)=>c.map((_,j)=>same.reduce((a,h)=>a+h.fills.ans[i][j],0)/n))};
   capture(r,G,avg,sig);
 }
 function capture(r,G,fills,sig){
@@ -853,7 +879,7 @@ function resultsView(){
   </section>`;
 }
 function excelBytes(){
-  const q=S.cfg.q,head=['ROLL NO','STUDENT NAME',(S.exam.name||'SCORE').toUpperCase(),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
+  const q=S.cfg.q,head=['ROLL NO','STUDENT NAME',((S.exam.name||'').trim()+' SCORE').trim().toUpperCase(),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
   const rows=S.students.map(s=>{const r=S.results[rk(s.roll)],roll=/^0/.test(s.roll)?s.roll:Number(s.roll);
     if(!r)return [roll,s.name,'',...Array(q).fill('')];const g=grade(r.ans);return [roll,s.name,g.score,...g.items.map(t=>t==='C'?'OK':'X')]});
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
