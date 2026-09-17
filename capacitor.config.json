@@ -1,0 +1,6 @@
+{
+  "appId": "com.edison.bubbletsek",
+  "appName": "Bubble Tsek",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

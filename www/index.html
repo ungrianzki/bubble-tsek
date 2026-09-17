@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Bubble Tsek</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<script src="lib/xlsx.full.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<style>
+:root{
+  --bg:#EDF1F4; --surface:#FFFFFF; --surface2:#F6F8FA; --ink:#15202B; --muted:#56636E; --line:#D3DBE1;
+  --accent:#2152A3; --accent-ink:#FFFFFF; --accent-soft:#E2EBF8;
+  --ok:#1B7A4C; --ok-soft:#DCF1E5; --bad:#BC3726; --bad-soft:#FAE2DD; --warn:#9A6200; --warn-soft:#FBEFD5;
+  --shadow:0 1px 2px rgba(21,32,43,.06),0 8px 24px rgba(21,32,43,.07);
+  --r:14px; --font:"Lexend",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1317; --surface:#161E25; --surface2:#1B252D; --ink:#E6ECF0; --muted:#98A6B0; --line:#2B3741;
+  --accent:#86ACF2; --accent-ink:#0E1317; --accent-soft:#1C2B44;
+  --ok:#5DCB94; --ok-soft:#163427; --bad:#F08B7B; --bad-soft:#3B1F1A; --warn:#E5B04C; --warn-soft:#342A10;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}}
+:root[data-theme="dark"]{
+  --bg:#0E1317; --surface:#161E25; --surface2:#1B252D; --ink:#E6ECF0; --muted:#98A6B0; --line:#2B3741;
+  --accent:#86ACF2; --accent-ink:#0E1317; --accent-soft:#1C2B44;
+  --ok:#5DCB94; --ok-soft:#163427; --bad:#F08B7B; --bad-soft:#3B1F1A; --warn:#E5B04C; --warn-soft:#342A10;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1000px;margin:0 auto;padding-inline:16px;padding-block:14px 60px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:6px 14px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{display:grid;grid-template-columns:repeat(3,9px);gap:3px}
+.logo i{width:9px;height:9px;border-radius:50%;border:1.6px solid var(--ink)}
+.logo i.f{background:var(--accent);border-color:var(--accent)}
+.brand b{font-weight:700;font-size:1.2rem;letter-spacing:-.01em}
+.brand small{display:block;color:var(--muted);font-size:.78rem;line-height:1.1}
+/* stepper */
+.stepper{overflow-x:auto;margin-bottom:16px;scrollbar-width:none}
+.stepper ol{display:flex;gap:4px;list-style:none;margin:0;padding:0;min-width:max-content}
+.st{display:flex;align-items:center;gap:8px;background:none;border:0;padding:8px 10px 8px 6px;border-radius:999px;cursor:pointer;color:var(--muted);font-size:.9rem;white-space:nowrap}
+.st:disabled{cursor:not-allowed;opacity:.5}
+.st:not(:disabled):hover{background:var(--surface)}
+.st-b{width:28px;height:28px;border-radius:50%;border:2px solid currentColor;display:grid;place-items:center;font-size:.8rem;font-weight:600;flex:none}
+.st.done{color:var(--ink)} .st.done .st-b{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.st.cur{color:var(--accent);font-weight:600;background:var(--surface)} .st.cur .st-b{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+/* panels */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:22px}
+@media (max-width:560px){.panel{padding:16px}}
+.eyebrow{margin:0 0 4px;font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+h1{margin:0;font-size:1.6rem;line-height:1.2;letter-spacing:-.015em;text-wrap:balance}
+h2{margin:0 0 10px;font-size:1.15rem;text-wrap:balance}
+.lede{margin:6px 0 0;color:var(--muted);max-width:62ch}
+.head{margin-bottom:20px}
+.note{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between;background:var(--accent-soft);border-radius:12px;padding:12px 14px;margin-bottom:20px}
+.note p{margin:0;max-width:52ch}
+.alert{border-radius:12px;padding:12px 14px;margin:0 0 16px;font-size:.95rem}
+.alert.bad{background:var(--bad-soft);color:var(--bad)} .alert.warn{background:var(--warn-soft);color:var(--warn)} .alert.ok{background:var(--ok-soft);color:var(--ok)}
+.alert ul{margin:6px 0 0;padding-left:20px} .alert b{font-weight:600}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:10px 18px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;font-weight:500;text-align:center;text-decoration:none;line-height:1.2}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.good{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.small{min-height:38px;padding:6px 12px;font-size:.9rem}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn svg{width:18px;height:18px;flex:none}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.actions .grp{display:flex;flex-wrap:wrap;gap:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+/* fields */
+.setup{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,300px);gap:28px;align-items:start}
+@media (max-width:760px){.setup{grid-template-columns:1fr}}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px 20px}
+.field label{display:block;font-weight:600;margin-bottom:6px}
+.help{margin:6px 0 0;font-size:.85rem;color:var(--muted)}
+.err{margin:6px 0 0;font-size:.85rem;color:var(--bad);font-weight:500}
+.spin{display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);max-width:220px}
+.spin:focus-within{border-color:var(--accent)}
+.spin input{flex:1;min-width:0;border:0;background:transparent;text-align:center;font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums;padding:8px 4px;-moz-appearance:textfield}
+.spin input::-webkit-outer-spin-button,.spin input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.spin input:focus{outline:none}
+.spin button{width:50px;border:0;background:var(--surface2);font-size:1.4rem;cursor:pointer}
+.spin button:hover{background:var(--accent-soft)}
+.spin input:disabled,.spin button:disabled{opacity:.5;cursor:not-allowed}
+.txt{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--surface);font-size:1rem;min-height:48px}
+.txt:focus{outline:none;border-color:var(--accent)}
+.preview{margin:0;position:sticky;top:12px}
+.preview .paper{background:#fff;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.14);overflow:hidden;border:1px solid var(--line)}
+.preview svg{display:block;width:100%;height:auto}
+.preview figcaption{font-size:.82rem;color:var(--muted);margin-top:8px;text-align:center}
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.82rem;font-weight:600;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.acc{background:var(--accent-soft);color:var(--accent)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* answer key grid */
+.kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 18px}
+.krow{display:flex;align-items:center;gap:10px;padding:4px 0;border-bottom:1px dashed var(--line)}
+.qn{width:32px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--muted)}
+.opts{display:flex;gap:6px}
+.bub{width:38px;height:38px;border-radius:50%;border:2px solid var(--ink);background:transparent;cursor:pointer;font-weight:600;font-size:.9rem;display:grid;place-items:center;padding:0}
+.bub:hover{background:var(--accent-soft)}
+.bub.on{background:var(--ink);color:var(--surface)}
+.krow.miss .qn{color:var(--bad)}
+.kgrid.compact{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.kgrid.compact .bub{width:32px;height:32px;font-size:.8rem}
+/* table */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:var(--surface2);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.c{text-align:center}
+.cell-c{color:var(--ok);font-weight:600} .cell-w{color:var(--bad);font-weight:600} .cell-b{color:var(--muted)} .cell-m{color:var(--warn);font-weight:600}
+td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
+.dim{color:var(--muted)}
+/* scan */
+.scan{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:22px;align-items:start}
+@media (max-width:820px){.scan{grid-template-columns:1fr}}
+.cam-box{position:relative;background:#0B0F12;border-radius:14px;overflow:hidden;min-height:300px;display:grid;place-items:center}
+.cam-box video{display:block;width:100%;height:auto}
+.cam-box canvas.ov{position:absolute;left:0;top:0;pointer-events:none}
+.cam-idle{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#DCE3E8;padding:20px}
+.cam-idle p{margin:0 0 14px;max-width:34ch}
+.cam-guide{position:absolute;inset:6%;border:2px dashed rgba(255,255,255,.35);border-radius:10px;pointer-events:none}
+.cam-status{margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--surface2);font-weight:500;min-height:46px;display:flex;align-items:center;gap:10px}
+.cam-status.ok{background:var(--ok-soft);color:var(--ok)} .cam-status.bad{background:var(--bad-soft);color:var(--bad)} .cam-status.warn{background:var(--warn-soft);color:var(--warn)}
+.dot{width:10px;height:10px;border-radius:50%;background:currentColor;flex:none}
+.cam-ctrl{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.side{display:grid;gap:16px}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface)}
+.big{font-size:2rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.bar{height:10px;background:var(--surface2);border-radius:99px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.seg{display:flex;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;padding:9px 6px;cursor:pointer;font-size:.88rem}
+.seg button+button{border-left:1.5px solid var(--line)}
+.seg button.on{background:var(--ink);color:var(--surface);font-weight:600}
+.recent{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.recent li{display:flex;justify-content:space-between;gap:10px;font-size:.9rem;padding:6px 0;border-bottom:1px dashed var(--line)}
+.recent li:last-child{border-bottom:0}
+.recent span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+@media (max-width:640px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--surface2);border-radius:12px;padding:14px}
+.tile small{display:block;color:var(--muted);font-size:.8rem;font-weight:500}
+.tile b{font-size:1.6rem;font-variant-numeric:tabular-nums;font-weight:700}
+.tile b span{font-size:.9rem;color:var(--muted);font-weight:500}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:22px 0 14px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;cursor:pointer;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.big-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.big-actions .btn{min-height:56px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:.85rem;color:var(--muted);margin-bottom:10px}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(8,12,16,.55);display:grid;place-items:center;padding:16px;z-index:50;overflow-y:auto}
+.sheet{background:var(--surface);color:var(--ink);border-radius:18px;width:100%;max-width:520px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:calc(100vh - 32px);overflow-y:auto}
+.sheet.wide{max-width:920px}
+.sheet h2{font-size:1.3rem}
+.res{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:20px;align-items:start}
+@media (max-width:760px){.res{grid-template-columns:1fr}}
+.res-img canvas{display:block;max-width:100%;max-height:62vh;width:auto;height:auto;margin:0 auto;border-radius:8px;border:1px solid var(--line)}
+.score{display:flex;align-items:baseline;gap:6px}
+.score b{font-size:3.2rem;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
+.score span{color:var(--muted);font-size:1.2rem}
+.who{font-size:1.2rem;font-weight:600;margin:10px 0 2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:12px 18px;border-radius:12px;font-weight:500;z-index:80;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+.toast.bad{background:var(--bad);color:#fff}
+.spacer{height:14px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"><i></i><i class="f"></i><i></i><i class="f"></i><i></i><i></i></div>
+      <div><b>Bubble Tsek</b><small>Bubble sheet checker for teachers</small></div>
+    </div>
+    <button class="btn small" data-act="newExam" id="btnNew">New exam</button>
+  </header>
+  <nav class="stepper" id="stepper" aria-label="Steps"></nav>
+  <main id="main"></main>
+</div>
+<div class="modal" id="modal" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<input type="file" id="fileKey" accept=".csv,.xlsx,.xls,text/csv" hidden>
+<input type="file" id="fileList" accept=".csv,.xlsx,.xls,text/csv" hidden>
+<input type="file" id="filePhoto" accept="image/*" capture="environment" hidden>
+
+<script>
+/* ================= constants & geometry (millimetres on US Letter) ================= */
+const LET='ABCDE';
+const PG={w:215.9,h:279.4};
+const FR={L:13,T:54,R:203,B:266}, FW=190, FH=212, MK=10;   // corner-marker centres
+const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer area inside the markers
+const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
+const SMAX=1.8, VSTRETCH=1.5, HSTRETCH=1.4, GH=33.8, RB=77, GAP=1.2;
+const MARK_MIN={1:0.16,2:0.25,3:0.38};
+const FIELDS={
+  roll:{label:'Roll number digits',min:2,max:6,step:1,help:'How many digits in each roll number (2 to 6).',layout:true},
+  q:{label:'Number of questions',min:1,max:100,step:1,help:'From 1 to 100 questions.',layout:true},
+  opt:{label:'Choices per question',min:2,max:5,step:1,help:'2 to 5 choices.',layout:true},
+  mc:{label:'Points for a correct answer',min:0.5,max:20,step:0.5,help:'From 0.5 to 20.'},
+  mi:{label:'Points taken off for a wrong answer',min:0,max:20,step:0.5,help:'0 means no deduction. Blank answers never lose points.'}
+};
+
+function crc6(bits){let c=0x2A;for(const b of bits){const t=((c>>5)&1)^b;c=(c<<1)&63;if(t)c^=0x03}return c}
+function cfgBits(cfg){
+  const f=[[cfg.roll-2,3],[cfg.q-1,7],[cfg.opt-2,2],[Math.round(cfg.mc*2)-1,6],[Math.round(cfg.mi*2),6]],b=[];
+  f.forEach(([v,n])=>{for(let i=n-1;i>=0;i--)b.push((v>>i)&1)});
+  const c=crc6(b);for(let i=5;i>=0;i--)b.push((c>>i)&1);return b;
+}
+function bitsCfg(b){
+  const d=b.slice(0,24);let c=0;for(let i=24;i<30;i++)c=c*2+b[i];
+  if(crc6(d)!==c)return null;
+  let k=0;const rd=n=>{let v=0;for(let i=0;i<n;i++)v=v*2+d[k++];return v};
+  const cfg={roll:rd(3)+2,q:rd(7)+1,opt:rd(2)+2,mc:(rd(6)+1)/2,mi:rd(6)/2};
+  if(cfg.roll>6||cfg.q>100||cfg.mc>20||cfg.mi>20)return null;return cfg;
+}
+const _geo={},_plan={};
+function plan(cfg){
+  const id=cfg.roll+'-'+cfg.q+'-'+cfg.opt;if(_plan[id])return _plan[id];
+  const AW=AV.u1-AV.u0,AH=AV.v1-AV.v0,G=Math.ceil(cfg.q/5);
+  const wO=13.7+(cfg.opt-1)*6,w0=13.7+(Math.max(cfg.opt,cfg.roll)-1)*6;
+  const colH=(c,n)=>(c===0?RB:0)+n*GH-(n?GAP:0);
+  let best=null;
+  for(let C=1;C<=6;C++){
+    const cw=AW/C,cap=s=>({c0:Math.max(0,Math.floor((AH/s-RB+GAP)/GH)),k:Math.floor((AH/s+GAP)/GH)});
+    const fits=s=>{const k=cap(s);return k.c0+(C-1)*k.k>=G};
+    let hi=Math.min(SMAX,cw/w0),lo=0.5,s;if(hi<lo)continue;
+    if(fits(hi))s=hi;else{if(!fits(lo))continue;for(let i=0;i<30;i++){const m=(lo+hi)/2;fits(m)?lo=m:hi=m}s=lo}
+    const k=cap(s),dist=[];let R=G;
+    for(let c=0;c<C;c++){
+      if(c===C-1){dist.push(R);break}
+      const rc=C-c,rest=(C-c-1)*k.k;
+      let n=c===0?Math.round(((RB+R*GH)/rc-RB)/GH):Math.round(R/rc);
+      n=Math.min(Math.max(n,R-rest,0),c===0?k.c0:k.k,R);dist.push(n);R-=n;
+    }
+    if(dist[C-1]>(C===1?k.c0:k.k))continue;
+    if(C>1&&dist.slice(1).some(n=>n===0))continue;
+    const hmax=Math.max(...dist.map((n,c)=>colH(c,n)))*s;
+    const cand={C,s,cw,dist,f:Math.min(VSTRETCH,AH/hmax),fill:hmax/AH};
+    if(!best||s>best.s+0.02||(Math.abs(s-best.s)<=0.02&&cand.fill>best.fill))best=cand;
+  }
+  best.fh=Math.max(1,Math.min(HSTRETCH,best.cw/(w0*best.s)));
+  return _plan[id]=best;
+}
+function geo(cfg){
+  const id=cfg.roll+'-'+cfg.q+'-'+cfg.opt;if(_geo[id])return _geo[id];
+  const P=plan(cfg),{s,f,fh,C,cw,dist}=P,vy=s*f,hx=s*fh;
+  const xOf=c=>{const n=c===0?Math.max(cfg.opt,cfg.roll):cfg.opt,w=(10.5+(n-1)*6)*hx+3.2*s;return AV.u0+c*cw+(cw-w)/2};
+  const x0=xOf(0),roll=[];
+  for(let d=0;d<cfg.roll;d++){const col=[];for(let r=0;r<10;r++)col.push({u:x0+(10.5+d*6)*hx,v:AV.v0+(14+r*5.6)*vy});roll.push(col)}
+  const ans=[],groups=[];let qi=0;
+  for(let c=0;c<C;c++){
+    const x=xOf(c),t0=c===0?AV.v0+RB*vy:AV.v0;
+    for(let k=0;k<dist[c]&&qi<cfg.q;k++){
+      const g=t0+k*GH*vy,n=Math.min(5,cfg.q-qi);groups.push({x,v:g+7.4*vy-4.2*s});
+      for(let r=0;r<n;r++){const v=g+(7.4+r*5.6)*vy,opts=[];for(let o=0;o<cfg.opt;o++)opts.push({u:x+(10.5+o*6)*hx,v});ans.push({x,v,opts});qi++}
+    }
+  }
+  return _geo[id]={s,hx,vy,d:4.4*s,x0,roll,ans,groups};
+}
+function sheetPrims(cfg){
+  const G=geo(cfg),p=[],X=u=>FR.L+u,Y=v=>FR.T+v,s=G.s,hx=G.hx,vy=G.vy,fs=Math.min(11,8*s);
+  const T=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
+  T('LASTNAME',66,7.3,7,'center');T('FIRSTNAME',122,7.3,7,'center');T('MI',180,7.3,7,'center');
+  p.push({t:'rect',x:16,y:9,w:184,h:32,lw:.35});
+  [17,25,33].forEach(y=>p.push({t:'line',x1:16,y1:y,x2:200,y2:y,lw:.25}));
+  ['NAME :','SECTION :','EXAM :','DATE :'].forEach((str,i)=>T(str,19,9+i*8+5.6,10));
+  T(`${cfg.q} item${cfg.q>1?'s':''}  ·  choices A–${LET[cfg.opt-1]}  ·  roll no. ${cfg.roll} digits`,16,46.5,7);
+  [[0,0],[FW,0],[FW,FH],[0,FH],[0,FH/2],[FW,FH/2]].forEach(([u,v])=>p.push({t:'rect',x:X(u)-MK/2,y:Y(v)-MK/2,w:MK,h:MK,fill:1}));
+  const x0=G.x0,rc=x0+(10.5+(cfg.roll-1)*3)*hx,r0=G.roll[0][0].v;
+  T('Roll No',X(rc),Y(r0-11*vy),fs,'center',true);
+  for(let d=0;d<cfg.roll;d++)p.push({t:'rect',x:X(G.roll[d][0].u-3*hx+.4),y:Y(r0-9.6*vy),w:6*hx-.8,h:Math.min(6*vy,8),lw:.3});
+  for(let r=0;r<10;r++){T(String(r),X(x0+7.2*hx),Y(G.roll[0][r].v+fs*.13),fs,'right');for(let d=0;d<cfg.roll;d++)p.push({t:'circle',cx:X(G.roll[d][r].u),cy:Y(G.roll[d][r].v),r:G.d/2,lw:.3})}
+  const r9=G.roll[0][9].v;
+  if(G.ans.length&&G.ans[0].x===x0){T('Answer Starts Here',X(rc),Y(r9+(71-64.4)*vy),fs,'center');T('only shade 1 answer',X(rc),Y(r9+(74.8-64.4)*vy),fs*.85,'center')}
+  G.groups.forEach(g=>{for(let o=0;o<cfg.opt;o++)T(LET[o],X(g.x+(10.5+o*6)*hx),Y(g.v),fs*.92,'center',true)});
+  G.ans.forEach((a,i)=>{T(String(i+1),X(a.x+7.2*hx),Y(a.v+fs*.13),fs,'right');a.opts.forEach(o=>p.push({t:'circle',cx:X(o.u),cy:Y(o.v),r:G.d/2,lw:.3}))});
+  const cells=[1,0,...cfgBits(cfg),0,1];
+  cells.forEach((b,i)=>{if(b)p.push({t:'rect',x:X(CODE.x0+i*CODE.cw),y:Y(FH-CODE.cw/2),w:CODE.cw,h:CODE.cw,fill:1})});
+  T('Shade one circle fully or mark it with an X  ·  Use a dark pencil or pen  ·  Keep the black squares clean',PG.w/2,275.5,7,'center');
+  return p;
+}
+function sheetSVG(cfg){
+  const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  let s='<svg viewBox="0 0 215.9 279.4" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bubble sheet preview"><rect width="215.9" height="279.4" fill="#fff"/>';
+  for(const p of sheetPrims(cfg)){
+    if(p.t==='rect')s+=`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${p.fill?'#000':'none'}" stroke="${p.fill?'none':'#000'}" stroke-width="${p.lw||.3}"/>`;
+    else if(p.t==='circle')s+=`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="none" stroke="#000" stroke-width="${p.lw}"/>`;
+    else if(p.t==='line')s+=`<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" stroke="#000" stroke-width="${p.lw}"/>`;
+    else s+=`<text x="${p.x}" y="${p.y}" font-size="${(p.size*.3528).toFixed(2)}" text-anchor="${p.align==='center'?'middle':p.align==='right'?'end':'start'}" font-family="Helvetica,Arial,sans-serif" font-weight="${p.bold?700:400}" fill="#000">${e(p.s)}</text>`;
+  }
+  return s+'</svg>';
+}
+function sheetPDF(cfg){
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'letter'});
+  doc.setDrawColor(0);doc.setFillColor(0);doc.setTextColor(0);
+  for(const p of sheetPrims(cfg)){
+    if(p.t==='rect'){doc.setLineWidth(p.lw||.3);doc.rect(p.x,p.y,p.w,p.h,p.fill?'F':'S')}
+    else if(p.t==='circle'){doc.setLineWidth(p.lw);doc.circle(p.cx,p.cy,p.r,'S')}
+    else if(p.t==='line'){doc.setLineWidth(p.lw);doc.line(p.x1,p.y1,p.x2,p.y2)}
+    else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);doc.text(p.s,p.x,p.y,{align:p.align})}
+  }
+  return doc.output('arraybuffer');
+}
+
+/* ================= vision ================= */
+function toGray(src,sw,sh,maxD,cv){
+  const sc=Math.min(1,maxD/Math.max(sw,sh)),w=Math.round(sw*sc),h=Math.round(sh*sc);
+  cv.width=w;cv.height=h;const x=cv.getContext('2d',{willReadFrequently:true});x.drawImage(src,0,0,w,h);
+  const d=x.getImageData(0,0,w,h).data,g=new Uint8Array(w*h);
+  for(let i=0,j=0;i<g.length;i++,j+=4)g[i]=(d[j]*77+d[j+1]*150+d[j+2]*29)>>8;
+  return {g,w,h};
+}
+function downsample(G,f){
+  if(f===1)return G;const w=Math.floor(G.w/f),h=Math.floor(G.h/f),g=new Uint8Array(w*h),a=f*f;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){let s=0;for(let j=0;j<f;j++){const r=(y*f+j)*G.w+x*f;for(let i=0;i<f;i++)s+=G.g[r+i]}g[y*w+x]=s/a}
+  return {g,w,h};
+}
+function findSquares(S){
+  const {g,w,h}=S,W1=w+1,I=new Float64Array(W1*(h+1));
+  for(let y=0;y<h;y++){let row=0;for(let x=0;x<w;x++){row+=g[y*w+x];I[(y+1)*W1+x+1]=I[y*W1+x+1]+row}}
+  const r=Math.max(8,Math.round(Math.min(w,h)/16)),bin=new Uint8Array(w*h);
+  for(let y=0;y<h;y++){const y0=Math.max(0,y-r),y1=Math.min(h-1,y+r);
+    for(let x=0;x<w;x++){const x0=Math.max(0,x-r),x1=Math.min(w-1,x+r);
+      const cnt=(x1-x0+1)*(y1-y0+1),sum=I[(y1+1)*W1+x1+1]-I[y0*W1+x1+1]-I[(y1+1)*W1+x0]+I[y0*W1+x0],m=sum/cnt,v=g[y*w+x];
+      if(v<m*0.78&&m-v>22)bin[y*w+x]=1}}
+  const seen=new Uint8Array(w*h),stack=new Int32Array(w*h),out=[];
+  for(let i=0;i<w*h;i++){
+    if(!bin[i]||seen[i])continue;let sp=0;stack[sp++]=i;seen[i]=1;
+    let n=0,sx=0,sy=0,mnx=w,mny=h,mxx=0,mxy=0;
+    while(sp){const p=stack[--sp],px=p%w,py=(p-px)/w;n++;sx+=px;sy+=py;
+      if(px<mnx)mnx=px;if(px>mxx)mxx=px;if(py<mny)mny=py;if(py>mxy)mxy=py;
+      if(px>0&&bin[p-1]&&!seen[p-1]){seen[p-1]=1;stack[sp++]=p-1}
+      if(px<w-1&&bin[p+1]&&!seen[p+1]){seen[p+1]=1;stack[sp++]=p+1}
+      if(py>0&&bin[p-w]&&!seen[p-w]){seen[p-w]=1;stack[sp++]=p-w}
+      if(py<h-1&&bin[p+w]&&!seen[p+w]){seen[p+w]=1;stack[sp++]=p+w}}
+    const bw=mxx-mnx+1,bh=mxy-mny+1;
+    if(n<30||bw<6||bh<6||mnx===0||mny===0||mxx===w-1||mxy===h-1)continue;
+    if(Math.max(bw,bh)/Math.min(bw,bh)>1.6)continue;
+    if(n/(bw*bh)<0.6)continue;
+    out.push({x:sx/n,y:sy/n,n});
+  }
+  return out.sort((a,b)=>b.n-a.n);
+}
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+function quadOK(q){
+  const [a,b,c,d]=q,t=dist(a,b),bo=dist(d,c),l=dist(a,d),ri=dist(b,c);
+  if(Math.min(t,bo,l,ri)<50)return false;
+  if(t/bo>1.8||bo/t>1.8||l/ri>1.8||ri/l>1.8)return false;
+  const asp=((l+ri)/2)/((t+bo)/2);if(asp<0.75||asp>1.9)return false;
+  let sg=0;for(let i=0;i<4;i++){const p=q[i],n=q[(i+1)%4],m=q[(i+2)%4];const cr=(n.x-p.x)*(m.y-n.y)-(n.y-p.y)*(m.x-n.x);const s=Math.sign(cr);if(!s)return false;if(!sg)sg=s;else if(s!==sg)return false}
+  return true;
+}
+function pickQuads(c){
+  const res=[];
+  for(let ri=0;ri<Math.min(6,c.length);ri++){
+    const A=c[ri].n,set=c.filter(k=>k.n>=A*0.45&&k.n<=A*1.6);if(set.length<4)continue;
+    let tl=set[0],tr=set[0],br=set[0],bl=set[0];
+    for(const k of set){if(k.x+k.y<tl.x+tl.y)tl=k;if(k.x+k.y>br.x+br.y)br=k;if(k.x-k.y>tr.x-tr.y)tr=k;if(k.x-k.y<bl.x-bl.y)bl=k}
+    const q=[tl,tr,br,bl];if(new Set(q).size<4||!quadOK(q))continue;
+    if(!res.some(o=>o.every((p,i)=>p===q[i])))res.push(q);
+  }
+  return res;
+}
+function homography(src,dst){
+  const A=[],B=[];
+  for(let i=0;i<4;i++){const [u,v]=src[i],{x,y}=dst[i];A.push([u,v,1,0,0,0,-u*x,-v*x]);B.push(x);A.push([0,0,0,u,v,1,-u*y,-v*y]);B.push(y)}
+  for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+    [A[c],A[p]]=[A[p],A[c]];[B[c],B[p]]=[B[p],B[c]];const pv=A[c][c];if(Math.abs(pv)<1e-12)return null;
+    for(let r=0;r<8;r++){if(r===c)continue;const f=A[r][c]/pv;if(!f)continue;for(let k=c;k<8;k++)A[r][k]-=f*A[c][k];B[r]-=f*B[c]}}
+  return B.map((b,i)=>b/A[i][i]);
+}
+function proj(H,u,v){const d=H[6]*u+H[7]*v+1;return [(H[0]*u+H[1]*v+H[2])/d,(H[3]*u+H[4]*v+H[5])/d]}
+function sampleAt(G,H,u,v){
+  let [x,y]=proj(H,u,v);if(x<0||y<0||x>G.w-2||y>G.h-2)return 255;
+  const x0=x|0,y0=y|0,fx=x-x0,fy=y-y0,i=y0*G.w+x0,g=G.g;
+  return (g[i]*(1-fx)+g[i+1]*fx)*(1-fy)+(g[i+G.w]*(1-fx)+g[i+G.w+1]*fx)*fy;
+}
+function readCode(G,H){
+  const v=[];
+  for(let i=0;i<CODE.n;i++){const u=CODE.x0+CODE.cw*(i+.5);let s=0;for(const dx of[-.7,0,.7])for(const dy of[-.7,0,.7])s+=sampleAt(G,H,u+dx,FH+dy);v.push(s/9)}
+  const blk=(v[0]+v[33])/2,wht=(v[1]+v[32])/2;if(wht-blk<30)return null;
+  const thr=(blk+wht)/2;return bitsCfg(v.slice(2,32).map(x=>x<thr?1:0));
+}
+function analyze(G){
+  const f=Math.max(1,Math.ceil(Math.max(G.w,G.h)/800)),Sm=downsample(G,f);
+  const quads=pickQuads(findSquares(Sm));
+  if(!quads.length)return {ok:false,reason:'markers'};
+  const box=[[0,0],[FW,0],[FW,FH],[0,FH]];
+  for(const q of quads){
+    const P=q.map(p=>({x:(p.x+.5)*f-.5,y:(p.y+.5)*f-.5}));
+    for(const pts of [P,[P[2],P[3],P[0],P[1]]]){
+      const H=homography(box,pts);if(!H)continue;
+      const cfg=readCode(G,H);if(cfg)return {ok:true,H,corners:pts,cfg,pxmm:dist(pts[0],pts[1])/FW};
+    }
+  }
+  return {ok:false,reason:'code'};
+}
+function bubbleFill(G,H,u,v,BD){
+  const ring=[];for(let a=0;a<16;a++){const t=a*Math.PI/8;ring.push(sampleAt(G,H,u+Math.cos(t)*(BD/2+.6),v+Math.sin(t)*(BD/2+.6)))}
+  ring.sort((a,b)=>a-b);const white=ring[11],thr=white*0.68,r=BD*0.34/3;
+  let n=0,dk=0;for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){if(i*i+j*j>10)continue;n++;if(sampleAt(G,H,u+i*r,v+j*r)<thr)dk++}
+  return white<40?0:dk/n;
+}
+function readFills(G,H,cfg){
+  const g=geo(cfg),D=g.d;
+  return {s:g.s,roll:g.roll.map(col=>col.map(b=>bubbleFill(G,H,b.u,b.v,D))),ans:g.ans.map(a=>a.opts.map(b=>bubbleFill(G,H,b.u,b.v,D)))};
+}
+function interpret(F){
+  const t=(MARK_MIN[S.sens]||.25)/Math.max(1,F.s||1);
+  const roll=F.roll.map(col=>{const m=[];col.forEach((f,i)=>{if(f>=t)m.push(i)});return m.length===1?String(m[0]):'?'}).join('');
+  const ans=F.ans.map(row=>{const m=[];row.forEach((f,i)=>{if(f>=t)m.push(i)});return m});
+  return {roll,ans};
+}
+const RS=3,RM=8;
+function rectify(G,H){
+  const w=Math.round((FW+2*RM)*RS),h=Math.round((FH+2*RM)*RS),img=new ImageData(w,h),d=img.data;
+  for(let y=0;y<h;y++){const v=y/RS-RM;for(let x=0;x<w;x++){const s=sampleAt(G,H,x/RS-RM,v),k=(y*w+x)*4;d[k]=d[k+1]=d[k+2]=s;d[k+3]=255}}
+  return img;
+}
+
+/* ================= state ================= */
+const STORE='bubbletsek.v1';
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores'}}
+function load(){try{const t=localStorage.getItem(STORE);if(t)return Object.assign(fresh(),JSON.parse(t))}catch(e){}return fresh()}
+function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}}
+let S=load();
+const UI={keyErr:null,listErr:null,listWarn:null,cur:null};
+const fmt=n=>(Math.round(n*100)/100).toString();
+const rk=r=>String(r).padStart(S.cfg.roll,'0');
+const hasResults=()=>Object.keys(S.results).length>0;
+const keyCount=()=>S.key.filter((v,i)=>i<S.cfg.q&&v!=null&&v<S.cfg.opt).length;
+const keyComplete=()=>S.key.length>=S.cfg.q&&keyCount()===S.cfg.q;
+const detailsDone=()=>!!(S.exam.name.trim()&&S.exam.section.trim()&&S.exam.date);
+const maxScore=()=>S.cfg.q*S.cfg.mc;
+const layoutText=c=>`${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
+const sameLayout=(a,b)=>a.roll===b.roll&&a.q===b.q&&a.opt===b.opt;
+function fitKey(){const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=S.key[i];k[i]=v!=null&&v<S.cfg.opt?v:null}S.key=k}
+function listIssues(){
+  const errs=[],seen={};
+  S.students.forEach(s=>{
+    if(s.roll.length>S.cfg.roll)errs.push(`${s.name}: roll number ${s.roll} has ${s.roll.length} digits, but the bubble sheet only has ${S.cfg.roll}.`);
+    const k=rk(s.roll);if(seen[k])errs.push(`Roll number ${s.roll} is used twice (${seen[k]} and ${s.name}).`);else seen[k]=s.name;
+  });
+  return errs;
+}
+const studentMap=()=>{const m={};S.students.forEach(s=>{m[rk(s.roll)]=s});return m};
+function grade(ans){
+  const {mc,mi}=S.cfg;let c=0,w=0,b=0,m=0;
+  const items=ans.map((a,i)=>{if(!a.length){b++;return 'B'}if(a.length>1){m++;w++;return 'M'}if(a[0]===S.key[i]){c++;return 'C'}w++;return 'W'});
+  return {c,w,b,m,items,score:Math.round((c*mc-w*mi)*100)/100};
+}
+function stepDone(i){return [S.sheetReady,keyComplete(),detailsDone(),S.students.length>0&&!listIssues().length,hasResults(),false][i]}
+function canOpen(i){for(let j=0;j<Math.min(i,4);j++)if(!stepDone(j))return false;return true}
+const STEPS=['Bubble sheet','Answer key','Exam details','Class list','Scan','Results'];
+
+/* ================= helpers ================= */
+let DL=null;try{const p=window.claude&&window.claude.use&&window.claude.use('downloads');if(p&&p.then)p.then(d=>{DL=d}).catch(()=>{})}catch(e){}
+const NATIVE=!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+const plug=n=>(window.Capacitor.Plugins&&window.Capacitor.Plugins[n])||window.Capacitor.registerPlugin(n);
+function toB64(data){const u=typeof data==='string'?new TextEncoder().encode(data):new Uint8Array(data);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+async function shareFile(name,data,title){
+  name=name.replace(/\s+/g,'_');
+  try{
+    const w=await plug('Filesystem').writeFile({path:name,data:toB64(data),directory:'CACHE'});
+    await plug('Share').share({title:title||name,text:title||name,files:[w.uri],dialogTitle:'Share '+name});
+  }catch(e){const m=String((e&&e.message)||e);if(/cancel/i.test(m))return;toast('Could not share the file: '+m,'bad')}
+}
+async function saveFile(name,data,mime){
+  if(NATIVE){await shareFile(name,data,name);return}
+  if(DL){try{await DL.save({filename:name,data});toast('Downloaded '+name);return}catch(e){
+    if(e&&e.code==='declined')return;if(e&&e.code==='rate_limited'){toast('Please wait a moment, then try again.','bad');return}}}
+  try{const url=URL.createObjectURL(new Blob([data],{type:mime}));const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);toast('Downloaded '+name)}
+  catch(e){toast('The download did not start. Please try again.','bad')}
+}
+let toastT;function toast(msg,kind){const t=$('#toast');t.textContent=msg;t.className='toast '+(kind||'');t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,3200)}
+const M={onClose:null};
+function openModal(html,opt={}){const m=$('#modal');m.innerHTML=`<div class="sheet ${opt.wide?'wide':''}" role="dialog" aria-modal="true">${html}</div>`;m.hidden=false;M.onClose=opt.onClose||null;const f=m.querySelector('[autofocus],.btn.primary,.btn');if(f)f.focus()}
+function closeModal(){const m=$('#modal');m.hidden=true;m.innerHTML='';const f=M.onClose;M.onClose=null;if(f)f()}
+const CONFIRM={};
+function confirmBox(title,msg,buttons){
+  buttons.forEach((b,i)=>CONFIRM['c'+i]=b.fn);
+  openModal(`<h2>${esc(title)}</h2><div class="dim">${msg}</div><div class="actions" style="justify-content:flex-end"><button class="btn" data-act="closeModal">Cancel</button>${buttons.map((b,i)=>`<button class="btn ${b.cls||''}" data-act="confirm" data-i="c${i}">${esc(b.label)}</button>`).join('')}</div>`);
+}
+function alertBox(title,items,kind='bad'){
+  const list=items.slice(0,10).map(x=>`<li>${esc(x)}</li>`).join('')+(items.length>10?`<li>…and ${items.length-10} more</li>`:'');
+  openModal(`<h2>${esc(title)}</h2><div class="alert ${kind}"><ul>${list}</ul></div><div class="actions" style="justify-content:flex-end"><button class="btn primary" data-act="closeModal">OK</button></div>`);
+}
+function parseCSV(t){
+  t=t.replace(/^﻿/,'');const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;else if(c===','){row.push(f);f=''}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''}
+    else f+=c}
+  if(f!==''||row.length){row.push(f);rows.push(row)}
+  return rows.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+function readRows(file){
+  return new Promise((res,rej)=>{
+    const rd=new FileReader(),isX=/\.xlsx?$/i.test(file.name);
+    rd.onerror=()=>rej(new Error('The file could not be opened.'));
+    rd.onload=()=>{try{
+      if(isX){if(!window.XLSX)throw new Error('The Excel reader did not load. Check your internet and reload the page, or save the file as CSV.');
+        const wb=XLSX.read(rd.result,{type:'array'});res(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:''}).filter(r=>r.some(c=>String(c).trim()!=='')))}
+      else res(parseCSV(rd.result))}catch(e){rej(e)}};
+    isX?rd.readAsArrayBuffer(file):rd.readAsText(file);
+  });
+}
+const safeName=s=>String(s).trim().replace(/[\\/:*?"<>|]+/g,'-').replace(/\s+/g,' ');
+const baseName=()=>`${safeName(S.exam.name||'Exam')}_${safeName(S.exam.section||'Section')}_${S.exam.date||today()}`;
+const ICON={
+  dl:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 21h16"/></svg>',
+  cam:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v12H3z"/><circle cx="12" cy="13.5" r="3.5"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>',
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5m6-6-6 6 6 6"/></svg>',
+  share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>',
+  ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6m0-6-9 9M18 14v6H4V6h6"/></svg>'
+};
+
+/* ================= render ================= */
+function render(){
+  if(S.step!==4)camClose();
+  if(!canOpen(S.step)){let i=0;while(i<5&&stepDone(i))i++;S.step=Math.min(S.step,i)}
+  $('#stepper').innerHTML='<ol>'+STEPS.map((t,i)=>{const cur=i===S.step,done=stepDone(i)&&!cur;
+    return `<li><button class="st ${cur?'cur':''} ${done?'done':''}" data-act="go" data-i="${i}" ${canOpen(i)?'':'disabled'} ${cur?'aria-current="step"':''}><span class="st-b">${done?'✓':i+1}</span><span class="st-t">${t}</span></button></li>`}).join('')+'</ol>';
+  $('#main').innerHTML=VIEW[S.step]();
+  if(S.step===4)bindScan();
+  persist();
+}
+const eyebrow=i=>`<p class="eyebrow">Step ${i+1} of 6</p>`;
+function numField(id){
+  const f=FIELDS[id],locked=f.layout&&hasResults();
+  return `<div class="field"><label for="f-${id}">${f.label}</label>
+  <div class="spin"><button type="button" data-act="spin" data-f="${id}" data-d="-1" aria-label="Decrease" ${locked?'disabled':''}>−</button>
+  <input id="f-${id}" data-cfg="${id}" type="number" inputmode="decimal" min="${f.min}" max="${f.max}" step="${f.step}" value="${S.cfg[id]}" ${locked?'disabled':''}>
+  <button type="button" data-act="spin" data-f="${id}" data-d="1" aria-label="Increase" ${locked?'disabled':''}>+</button></div>
+  <p class="help">${id==='opt'?`Letters A–${LET[S.cfg.opt-1]}. `:''}${f.help}</p><p class="err" id="e-${id}" hidden></p></div>`;
+}
+const VIEW={
+0(){return `<section class="panel">
+  <div class="head">${eyebrow(0)}<h1>Set up the bubble sheet</h1><p class="lede">Pick the numbers for this quiz or exam. The preview updates as you go. Download the sheet, print it and give one to each student.</p></div>
+  <div class="note"><p><b>Printed a sheet from before?</b> Scan it to reuse its settings. If its answers are shaded, they become the answer key.</p><button class="btn small" data-act="scanTemplate" ${hasResults()?'disabled':''}>${ICON.cam} Scan an old sheet</button></div>
+  ${hasResults()?'<div class="alert warn">Roll digits, questions and choices are locked because scores are already saved. Start a <b>New exam</b> to change them.</div>':''}
+  <div class="setup"><div class="fields">${['roll','q','opt','mc','mi'].map(numField).join('')}</div>
+  <figure class="preview"><div class="paper" id="preview">${sheetSVG(S.cfg)}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
+  <div class="actions"><button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
+</section>`},
+1(){const n=keyCount(),q=S.cfg.q;
+return `<section class="panel">
+  <div class="head">${eyebrow(1)}<h1>Add the answer key</h1><p class="lede">Upload a CSV file, scan a bubble sheet you shaded with the correct answers, or tap the answers below.</p></div>
+  <div class="toolbar">
+    <button class="btn" data-act="pickKey">${ICON.up} Upload CSV file</button>
+    <button class="btn" data-act="scanKey">${ICON.cam} Scan shaded answer sheet</button>
+    <button class="btn" data-act="dlKeyTpl">${ICON.dl} Download CSV template</button>
+  </div>
+  ${UI.keyErr?`<div class="alert bad"><b>This answer key doesn’t fit your bubble sheet.</b><ul>${UI.keyErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${UI.keyErr.length>8?`<li>…and ${UI.keyErr.length-8} more</li>`:''}</ul></div>`:''}
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+    <span class="pill ${n===q?'ok':'warn'}">${n===q?'✓ Answer key complete':`${n} of ${q} answers set`}</span>
+    <span class="pill">${layoutText(S.cfg)}</span>
+    ${S.keyFrom?`<span class="pill acc">From ${esc(S.keyFrom)}</span>`:''}
+    ${n?'<button class="btn small" data-act="clearKey" style="margin-left:auto">Clear answers</button>':''}
+  </div>
+  ${keyGrid(S.key.slice(0,q).map(v=>v==null?[]:[v]),'setKey',true)}
+  <div class="actions"><button class="btn" data-act="go" data-i="0">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="2" ${keyComplete()?'':'disabled'}>Next: exam details ${ICON.arrow}</button></div>
+</section>`},
+2(){return `<section class="panel">
+  <div class="head">${eyebrow(2)}<h1>Exam details</h1><p class="lede">These go on your results and name the Excel file.</p></div>
+  <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
+    <div class="field"><label for="x-name">Exam name</label><input class="txt" id="x-name" data-exam="name" value="${esc(S.exam.name)}" placeholder="e.g. Midterm"></div>
+    <div class="field"><label for="x-section">Class section</label><input class="txt" id="x-section" data-exam="section" value="${esc(S.exam.section)}" placeholder="e.g. Grade 10 - Rizal"></div>
+    <div class="field"><label for="x-date">Exam date</label><input class="txt" id="x-date" type="date" data-exam="date" value="${esc(S.exam.date)}"></div>
+  </div>
+  <p class="help" style="margin-top:16px">Excel file name: <span class="mono" id="fname">${esc(baseName())}.xlsx</span></p>
+  <div class="actions"><button class="btn" data-act="go" data-i="1">${ICON.back} Back</button><button class="btn primary" id="next2" data-act="go" data-i="3" ${detailsDone()?'':'disabled'}>Next: class list ${ICON.arrow}</button></div>
+</section>`},
+3(){const iss=S.students.length?listIssues():[];
+return `<section class="panel">
+  <div class="head">${eyebrow(3)}<h1>Upload the class list</h1><p class="lede">A CSV file with two columns: <b>STUDENT NAME</b> and <b>ROLL NO</b>. Scores are saved to the student whose roll number is shaded on the sheet.</p></div>
+  <div class="toolbar"><button class="btn primary" data-act="pickList">${ICON.up} ${S.students.length?'Replace class list':'Upload class list'}</button><button class="btn" data-act="dlListEx">${ICON.dl} Download example CSV</button></div>
+  ${UI.listErr?`<div class="alert bad"><b>We couldn’t use that file.</b><ul>${UI.listErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
+  ${iss.length?`<div class="alert bad"><b>Please fix these in your file and upload it again.</b><ul>${iss.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${iss.length>8?`<li>…and ${iss.length-8} more</li>`:''}</ul></div>`:''}
+  ${UI.listWarn&&UI.listWarn.length?`<div class="alert warn"><ul>${UI.listWarn.slice(0,5).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
+  ${S.students.length?`<p style="margin:0 0 10px"><span class="pill ok">✓ ${S.students.length} students</span> <span class="dim" style="font-size:.9rem">${esc(S.listName)}</span></p>
+  <div class="tbl-wrap" style="max-height:420px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th></tr></thead><tbody>
+  ${S.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(s.roll))}</td><td>${esc(s.name)}</td></tr>`).join('')}</tbody></table></div>`
+  :`<div class="card dim">No class list yet. Tip: open the example file in Excel, replace the names and roll numbers, then save it as <b>CSV</b>.</div>`}
+  <div class="actions"><button class="btn" data-act="go" data-i="2">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="4" ${stepDone(3)?'':'disabled'}>${ICON.cam} Start scanning</button></div>
+</section>`},
+4(){return `<section class="panel">
+  <div class="head">${eyebrow(4)}<h1>Scan the answer sheets</h1><p class="lede">Lay a sheet flat in good light and hold the camera above it so all the black squares show. It scans on its own once the picture is steady.</p></div>
+  <div class="scan">
+    <div>${camMarkup('')}</div>
+    <aside class="side" id="scanSide">${scanSide()}</aside>
+  </div>
+  <div class="actions"><button class="btn" data-act="go" data-i="3">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="5">Done scanning: see results ${ICON.arrow}</button></div>
+</section>`},
+5(){return resultsView()}
+};
+function keyGrid(ansArr,act,single,compact){
+  return `<div class="kgrid ${compact?'compact':''}">${ansArr.map((a,i)=>`<div class="krow ${single&&!a.length?'miss':''}"><span class="qn">${i+1}</span><div class="opts">${
+    Array.from({length:S.cfg.opt},(_,o)=>`<button class="bub ${a.includes(o)?'on':''}" data-act="${act}" data-q="${i}" data-o="${o}" aria-pressed="${a.includes(o)}" aria-label="Question ${i+1} ${LET[o]}">${LET[o]}</button>`).join('')}</div></div>`).join('')}</div>`;
+}
+function camMarkup(p){
+  return `<div class="cam-box" id="${p}camBox"><video id="${p}vid" playsinline muted hidden></video><canvas class="ov" id="${p}ov"></canvas>
+  <div class="cam-idle" id="${p}camIdle"><div><p>The camera is off.</p><button class="btn primary" data-act="camStart" data-p="${p}">${ICON.cam} Start camera</button></div></div></div>
+  <div class="cam-status" id="${p}camStatus"><span class="dot"></span><span>Press “Start camera” to begin.</span></div>
+  <div class="cam-ctrl"><button class="btn" data-act="camStop" id="${p}bStop" hidden>Stop</button><button class="btn primary" data-act="camStart" data-p="${p}" id="${p}bCont" hidden>Continue</button>
+  <button class="btn" data-act="photo">${ICON.cam} Take a photo instead</button></div>`;
+}
+function scanSide(){
+  const saved=S.students.filter(s=>S.results[rk(s.roll)]).length,total=S.students.length;
+  const recent=Object.values(S.results).sort((a,b)=>b.at-a.at).slice(0,6),sm=studentMap();
+  return `<div class="card"><small class="dim">Scores saved</small><div class="big">${saved}<span class="dim" style="font-size:1rem;font-weight:500"> of ${total}</span></div><div class="bar"><i style="width:${total?saved/total*100:0}%"></i></div></div>
+  <div class="card"><small class="dim" style="display:block;margin-bottom:8px">Mark detection</small>
+  <div class="seg" role="group" aria-label="Mark detection">${[[1,'Light marks'],[2,'Normal'],[3,'Strict']].map(([v,l])=>`<button class="${S.sens===v?'on':''}" data-act="sens" data-v="${v}">${l}</button>`).join('')}</div>
+  <p class="help">Use “Light marks” for faint pencil or small X marks. Use “Strict” if erased marks are being counted.</p></div>
+  <div class="card"><small class="dim" style="display:block;margin-bottom:6px">Last saved</small>${recent.length?`<ul class="recent">${recent.map(r=>{const g=grade(r.ans),s=sm[r.roll];return `<li><span>${esc(s?s.name:r.roll)}</span><span class="mono">${fmt(g.score)}/${fmt(maxScore())}</span></li>`}).join('')}</ul>`:'<p class="dim" style="margin:0;font-size:.9rem">Nothing saved yet.</p>'}</div>`;
+}
+
+/* ================= camera ================= */
+const Cam={stream:null,p:'',mode:'student',expect:null,onCap:null,paused:false,running:false,hist:[],lastSig:null,sawEmpty:true,timer:null,cv:document.createElement('canvas'),lastMsg:''};
+function camEls(){const p=Cam.p;return {v:$('#'+p+'vid'),ov:$('#'+p+'ov'),st:$('#'+p+'camStatus'),idle:$('#'+p+'camIdle'),stop:$('#'+p+'bStop'),cont:$('#'+p+'bCont')}}
+function camBind(p,mode,expect,onCap){camClose();Object.assign(Cam,{p,mode,expect,onCap,paused:false,hist:[],lastSig:null,sawEmpty:true})}
+function status(msg,kind){const e=camEls();if(!e.st)return;const k=msg+kind;if(Cam.lastMsg===k)return;Cam.lastMsg=k;e.st.className='cam-status '+(kind||'');e.st.innerHTML=`<span class="dot"></span><span>${msg}</span>`}
+async function camStart(){
+  const e=camEls();if(!e.v)return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){status('This browser can’t open the camera here. Use “Take a photo instead”.','bad');return}
+  status('Opening camera…','');
+  try{Cam.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})}
+  catch(err){const n=err&&err.name;
+    status(n==='NotAllowedError'||n==='SecurityError'?'Camera access was blocked. Allow the camera in your browser settings, or use “Take a photo instead”.':n==='NotFoundError'?'No camera was found on this device. Use “Take a photo instead”.':'The camera could not start. Close other apps using it, or use “Take a photo instead”.','bad');return}
+  const e2=camEls();if(!e2.v){camClose();return}
+  e2.v.srcObject=Cam.stream;e2.v.hidden=false;e2.idle.hidden=true;try{await e2.v.play()}catch(x){}
+  Cam.running=true;Cam.paused=false;Cam.hist=[];Cam.lastMsg='';if(e2.stop)e2.stop.hidden=false;if(e2.cont)e2.cont.hidden=true;
+  status('Looking for the sheet…','');tick();
+}
+function camStop(msg){
+  clearTimeout(Cam.timer);Cam.running=false;
+  if(Cam.stream){Cam.stream.getTracks().forEach(t=>t.stop());Cam.stream=null}
+  const e=camEls();if(e.v){e.v.srcObject=null;e.v.hidden=true}if(e.idle){e.idle.hidden=false;e.idle.innerHTML='<div><p>Scanning is stopped.</p></div>'}
+  if(e.ov){e.ov.width=e.ov.width}
+  if(e.stop)e.stop.hidden=true;if(e.cont)e.cont.hidden=false;
+  if(msg!==false)status('Stopped. Press “Continue” when you’re ready.','warn');
+}
+function camClose(){clearTimeout(Cam.timer);Cam.running=false;if(Cam.stream){Cam.stream.getTracks().forEach(t=>t.stop());Cam.stream=null}}
+function tick(){
+  if(!Cam.running)return;
+  const e=camEls();if(!e.v){camClose();return}
+  if(!Cam.paused&&e.v.readyState>=2&&e.v.videoWidth){
+    try{const G=toGray(e.v,e.v.videoWidth,e.v.videoHeight,1600,Cam.cv);const r=analyze(G);drawOverlay(r,G);handle(r,G,false)}catch(x){console.error(x)}
+  }
+  Cam.timer=setTimeout(tick,80);
+}
+function drawOverlay(r,G){
+  const e=camEls();if(!e.ov||!e.v)return;const w=e.v.clientWidth,h=e.v.clientHeight,dpr=window.devicePixelRatio||1;
+  if(e.ov.width!==Math.round(w*dpr)||e.ov.height!==Math.round(h*dpr)){e.ov.width=Math.round(w*dpr);e.ov.height=Math.round(h*dpr);e.ov.style.width=w+'px';e.ov.style.height=h+'px'}
+  const x=e.ov.getContext('2d');x.clearRect(0,0,e.ov.width,e.ov.height);if(!r.ok)return;
+  const k=w*dpr/G.w;x.lineWidth=4*dpr;x.strokeStyle='#3DDC84';x.fillStyle='rgba(61,220,132,.12)';x.beginPath();
+  r.corners.forEach((p,i)=>i?x.lineTo(p.x*k,p.y*k):x.moveTo(p.x*k,p.y*k));x.closePath();x.fill();x.stroke();
+}
+function handle(r,G,single){
+  if(!r.ok){
+    Cam.hist=[];Cam.sawEmpty=true;
+    const m=r.reason==='markers'?'Looking for the sheet… Make sure all 4 corner squares are in view.':'I see the squares, but can’t read the sheet. Hold steady and avoid shadows or glare.';
+    if(single)alertBox('Couldn’t read this photo',[r.reason==='markers'?'The four black corner squares were not found. Take the photo from straight above with the whole sheet in view.':'The sheet was found but the code strip at the bottom could not be read. Retake the photo in brighter, even light.']);
+    else status(m,'');return;
+  }
+  if(Cam.expect&&!sameLayout(r.cfg,Cam.expect)){
+    const m=`This sheet was made for ${layoutText(r.cfg)}. Your exam uses ${layoutText(Cam.expect)}.`;
+    Cam.hist=[];if(single)alertBox('This sheet doesn’t match your exam',[m]);else status(m,'bad');return;
+  }
+  if(r.pxmm<2&&!single){Cam.hist=[];status('Move the camera a little closer to the sheet.','warn');return}
+  const fills=readFills(G,r.H,r.cfg);
+  if(single){capture(r,G,fills);return}
+  const last=Cam.hist[Cam.hist.length-1];
+  if(last&&Math.max(...last.c.map((p,i)=>dist(p,r.corners[i])))>0.02*G.w)Cam.hist=[];
+  Cam.hist.push({c:r.corners,fills});
+  if(Cam.hist.length<3){status('Sheet found. Hold still…','ok');return}
+  const h3=Cam.hist.slice(-3),avg={s:fills.s,roll:fills.roll.map((c,i)=>c.map((_,j)=>h3.reduce((s,h)=>s+h.fills.roll[i][j],0)/3)),ans:fills.ans.map((c,i)=>c.map((_,j)=>h3.reduce((s,h)=>s+h.fills.ans[i][j],0)/3))};
+  const rd=interpret(avg),sig=rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
+  if(Cam.lastSig&&sig===Cam.lastSig&&!Cam.sawEmpty){status('Done with this sheet. Put the next sheet in view.','ok');Cam.hist=[];return}
+  capture(r,G,avg,sig);
+}
+function capture(r,G,fills,sig){
+  const rd=interpret(fills);sig=sig||rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
+  Cam.paused=true;Cam.hist=[];try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}
+  status('Sheet scanned.','ok');
+  Cam.onCap({cfg:r.cfg,roll:rd.roll,ans:rd.ans,base:rectify(G,r.H),sig});
+}
+function camResume(sig){Cam.lastSig=sig;Cam.sawEmpty=false;Cam.paused=false;Cam.lastMsg='';if(Cam.running)status('Put the next sheet in view.','')}
+function photoPicked(file){
+  const url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{try{const G=toGray(img,img.naturalWidth,img.naturalHeight,2000,Cam.cv);URL.revokeObjectURL(url);const wasPaused=Cam.paused;Cam.paused=true;const r=analyze(G);handle(r,G,true);if(!r.ok||(Cam.expect&&!sameLayout(r.cfg,Cam.expect)))Cam.paused=wasPaused}catch(e){alertBox('Couldn’t read this photo',['Please try another photo.'])}};
+  img.onerror=()=>alertBox('Couldn’t open this photo',['Please try a JPG or PNG photo.']);
+  img.src=url;
+}
+function bindScan(){camBind('',"student",S.cfg,onStudentCap)}
+
+/* ================= capture results ================= */
+function drawRect(canvas,cur,mode){
+  const x=canvas.getContext('2d');x.putImageData(cur.base,0,0);const g=geo(cur.cfg),rad=g.d/2*RS+2;
+  const P=b=>[(b.u+RM)*RS,(b.v+RM)*RS];
+  const ring=(b,col,fill,dash)=>{const [px,py]=P(b);x.beginPath();x.arc(px,py,rad,0,Math.PI*2);x.setLineDash(dash?[4,3]:[]);x.lineWidth=3;x.strokeStyle=col;if(fill){x.fillStyle=fill;x.fill()}x.stroke();x.setLineDash([])};
+  for(let d=0;d<cur.cfg.roll;d++){const ch=cur.roll[d];if(ch>='0'&&ch<='9')ring(g.roll[d][+ch],'#2152A3','rgba(33,82,163,.25)')}
+  cur.ans.forEach((a,i)=>{
+    if(mode!=='student'){a.forEach(o=>ring(g.ans[i].opts[o],a.length===1?'#2152A3':'#C98A12',a.length===1?'rgba(33,82,163,.25)':'rgba(201,138,18,.3)'));return}
+    const k=S.key[i];
+    if(a.length===1&&a[0]===k)ring(g.ans[i].opts[k],'#1B9A5A','rgba(27,154,90,.3)');
+    else{a.forEach(o=>ring(g.ans[i].opts[o],a.length>1?'#C98A12':'#D03B28',a.length>1?'rgba(201,138,18,.3)':'rgba(208,59,40,.3)'));if(k!=null)ring(g.ans[i].opts[k],'#1B9A5A',null,true)}
+  });
+}
+function mountCanvas(cur,mode){const box=$('#resImg');if(!box)return;let c=box.querySelector('canvas');if(!c){c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;box.appendChild(c)}drawRect(c,cur,mode)}
+
+function onStudentCap(cap){UI.cur=Object.assign(cap,{editing:false});openModal(resultModal(),{wide:true,onClose:()=>{}});mountCanvas(UI.cur,'student')}
+function resultModal(){
+  const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
+  return `<div class="res">
+  <div class="res-img" id="resImg"></div>
+  <div>
+    <div id="resInfo">${resInfo()}</div>
+    <div id="resEdit" ${cur.editing?'':'hidden'}>${cur.editing?resEditor():''}</div>
+    <div class="actions" id="resBtns">${resButtons()}</div>
+  </div></div>`;
+}
+function resInfo(){
+  const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
+  let warn='';
+  if(!st)warn=`<div class="alert bad"><b>${validRoll?`Roll number ${esc(cur.roll)} is not in the class list.`:'The roll number is missing or has more than one shade in a column.'}</b><br>This score can’t be saved. Tap <b>Edit</b> to fix the roll number, or discard it.</div>`;
+  else if(prev)warn=`<div class="alert warn">${esc(st.name)} already has a saved score of <b>${fmt(grade(prev.ans).score)}</b>. Saving will replace it.</div>`;
+  return `<p class="eyebrow">Score</p><div class="score"><b>${fmt(g.score)}</b><span>/ ${fmt(maxScore())}</span></div>
+  <div class="who">${st?esc(st.name):'<span class="dim">Unknown student</span>'}</div>
+  <div class="dim">Roll no. <span class="mono">${st?esc(cur.roll):'—'}</span></div>
+  <div class="chips"><span class="pill ok">${g.c} correct</span><span class="pill bad">${g.w-g.m} wrong</span><span class="pill">${g.b} blank</span>${g.m?`<span class="pill warn">${g.m} with 2+ answers</span>`:''}</div>
+  <div class="legend"><span><b style="color:#1B9A5A">●</b> correct</span><span><b style="color:#D03B28">●</b> wrong</span><span><b style="color:#1B9A5A">◌</b> right answer</span><span><b style="color:#C98A12">●</b> 2+ answers</span></div>
+  ${warn}`;
+}
+function resButtons(){
+  const cur=UI.cur,ok=/^\d+$/.test(cur.roll)&&studentMap()[cur.roll],prev=ok&&S.results[cur.roll];
+  return `<button class="btn" data-act="resDiscard">Discard</button><div class="grp"><button class="btn" data-act="resEdit">${cur.editing?'Hide editor':'Edit'}</button><button class="btn good" data-act="resSave" ${ok?'':'disabled'}>${prev?'Replace score':'Save score'}</button></div>`;
+}
+function resEditor(){
+  const cur=UI.cur;
+  return `<div class="card" style="margin-top:6px"><div class="field"><label for="edRoll">Roll number</label><input class="txt mono" id="edRoll" data-ed="roll" inputmode="numeric" maxlength="${S.cfg.roll}" value="${esc(cur.roll.replace(/\?/g,''))}" style="max-width:180px"></div>
+  <p class="help" style="margin:12px 0 8px">Tap to change answers. Tap a shaded one to clear it.</p>${keyGrid(cur.ans,'edAns',false,true)}</div>`;
+}
+function refreshRes(){const i=$('#resInfo');if(i)i.innerHTML=resInfo();const b=$('#resBtns');if(b)b.innerHTML=resButtons();mountCanvas(UI.cur,'student')}
+
+function onKeyCap(cap){
+  const probs=[];cap.ans.forEach((a,i)=>{if(a.length!==1)probs.push(i+1)});UI.cur=cap;
+  openModal(`<div class="res"><div class="res-img" id="resImg"></div><div>
+    <p class="eyebrow">Answer key from scan</p><h2>${cap.ans.length-probs.length} of ${cap.ans.length} answers found</h2>
+    ${probs.length?`<div class="alert warn">Questions <b>${probs.slice(0,15).join(', ')}${probs.length>15?'…':''}</b> have no answer or more than one. Those will be left empty so you can tap the right answer.</div>`:'<div class="alert ok">Every question has exactly one answer.</div>'}
+    <div class="actions"><button class="btn" data-act="keyRescan">Scan again</button><button class="btn primary" data-act="keyUse">Use this answer key</button></div></div></div>`,{wide:true,onClose:camClose});
+  mountCanvas(cap,'key');
+}
+function onTplCap(cap){
+  const c=cap.cfg,marked=cap.ans.filter(a=>a.length).length,full=cap.ans.every(a=>a.length===1);UI.cur=cap;
+  openModal(`<div class="res"><div class="res-img" id="resImg"></div><div>
+    <p class="eyebrow">Sheet found</p><h2>${c.q} questions · A–${LET[c.opt-1]}</h2>
+    <div class="tbl-wrap" style="margin:10px 0 14px"><table><tbody>
+    <tr><td>Roll number digits</td><td class="num">${c.roll}</td></tr><tr><td>Questions</td><td class="num">${c.q}</td></tr><tr><td>Choices</td><td class="num">${c.opt}</td></tr>
+    <tr><td>Points if correct</td><td class="num">${fmt(c.mc)}</td></tr><tr><td>Points off if wrong</td><td class="num">${fmt(c.mi)}</td></tr></tbody></table></div>
+    ${full?'<div class="alert ok">All questions are shaded, so this sheet will be your <b>answer key</b>.</div>':marked?`<div class="alert warn">${marked} questions are shaded. They’ll be added to the answer key and you can fill in the rest.</div>`:'<div class="alert">No answers are shaded. Only the settings will be used.</div>'}
+    <div class="actions"><button class="btn" data-act="tplRescan">Scan again</button><button class="btn primary" data-act="tplUse">Use this sheet</button></div></div></div>`,{wide:true,onClose:camClose});
+  mountCanvas(cap,'key');
+}
+function scannerModal(title,lede,mode,expect,onCap){
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><h2 style="margin-bottom:4px">${title}</h2><p class="dim" style="margin:0 0 14px">${lede}</p></div><button class="btn small" data-act="closeModal">Close</button></div>${camMarkup('m')}`,{wide:true,onClose:camClose});
+  camBind('m',mode,expect,onCap);camStart();
+}
+
+/* ================= results & analysis ================= */
+function stats(){
+  const rows=S.students.map(s=>{const r=S.results[rk(s.roll)];return {s,r,g:r?grade(r.ans):null}}),done=rows.filter(x=>x.g);
+  const sc=done.map(x=>x.g.score).sort((a,b)=>a-b),n=sc.length;
+  return {rows,done,n,mean:n?sc.reduce((a,b)=>a+b,0)/n:0,hi:n?sc[n-1]:0,lo:n?sc[0]:0,med:n?(n%2?sc[(n-1)/2]:(sc[n/2-1]+sc[n/2])/2):0};
+}
+function itemStats(){
+  const st=stats(),done=[...st.done].sort((a,b)=>b.g.score-a.g.score),n=done.length,k=Math.max(1,Math.round(n*.27));
+  const up=done.slice(0,k),low=done.slice(-k);
+  return Array.from({length:S.cfg.q},(_,i)=>{
+    const cnt=Array(S.cfg.opt).fill(0);let blank=0,multi=0,right=0;
+    done.forEach(x=>{const a=x.r.ans[i]||[];if(!a.length)blank++;else if(a.length>1)multi++;else cnt[a[0]]++;if(x.g.items[i]==='C')right++});
+    const p=n?right/n:0,D=n>=5?(up.filter(x=>x.g.items[i]==='C').length-low.filter(x=>x.g.items[i]==='C').length)/k:null;
+    const diff=p>=.76?'Very easy':p>=.61?'Easy':p>=.40?'Average':p>=.25?'Difficult':'Very difficult';
+    const disc=D==null?'—':D>=.4?'Very good':D>=.3?'Good':D>=.2?'Fair':D>=0?'Poor':'Negative';
+    const remark=D==null?'Need 5+ sheets':D<0?'Check the key':D>=.3&&p>=.25&&p<=.9?'Keep':D>=.2?'Improve':'Revise or replace';
+    const unused=cnt.map((c,o)=>c===0&&o!==S.key[i]?LET[o]:null).filter(Boolean);
+    return {i,cnt,blank,multi,right,p,D,diff,disc,remark,unused,n};
+  });
+}
+const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+function scoresTable(st){
+  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
+  ${st.rows.map((x,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>
+  ${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td><button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
+  :`<td class="num dim">—</td><td></td><td></td><td></td><td></td><td><span class="pill">Not scanned</span></td><td></td>`}</tr>`).join('')}</tbody></table></div>`;
+}
+function studentAnalysis(st,forReport){
+  const q=S.cfg.q;const cls={C:'cell-c',W:'cell-w',B:'cell-b',M:'cell-m'};
+  if(!st.done.length)return '<p class="dim">No scanned sheets yet.</p>';
+  return `<div class="legend"><span class="cell-c">A = correct</span><span class="cell-w">B = wrong</span><span class="cell-m">* = 2+ answers</span><span class="cell-b">– = blank</span></div>
+  <div class="tbl-wrap"><table><thead><tr><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th class="num">2+ ans.</th>${Array.from({length:q},(_,i)=>`<th class="c">Q${i+1}</th>`).join('')}</tr>
+  <tr><td colspan="8" class="dim" style="text-align:right">Answer key</td>${Array.from({length:q},(_,i)=>`<td class="c keycol">${LET[S.key[i]]??''}</td>`).join('')}</tr></thead><tbody>
+  ${[...st.done].sort((a,b)=>b.g.score-a.g.score).map(x=>`<tr><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td><td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w-x.g.m}</td><td class="num">${x.g.b}</td><td class="num">${x.g.m}</td>
+  ${x.g.items.map((t,i)=>{const a=x.r.ans[i]||[];return `<td class="c ${cls[t]}">${t==='B'?'–':t==='M'?'*':LET[a[0]]}</td>`}).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function optionAnalysis(st){
+  if(!st.done.length)return '<p class="dim">No scanned sheets yet.</p>';
+  const it=itemStats();
+  return `<p class="dim" style="margin:0 0 10px;font-size:.9rem;max-width:75ch"><b>Difficulty</b> is the share of students who got the item right. <b>Discrimination</b> checks if the top 27% of scorers got it right more often than the bottom 27% (needs at least 5 sheets). A negative value often means the answer key is wrong for that item. Green cells are the correct answer.</p>
+  <div class="tbl-wrap"><table><thead><tr><th class="num">Q</th><th class="c">Key</th>${Array.from({length:S.cfg.opt},(_,o)=>`<th class="c">${LET[o]}</th>`).join('')}<th class="c">Blank</th><th class="c">2+ ans.</th><th class="num">Correct</th><th>Difficulty</th><th class="num">Disc.</th><th>Discrimination</th><th>Remark</th></tr></thead><tbody>
+  ${it.map(r=>`<tr><td class="num"><b>${r.i+1}</b></td><td class="c"><b>${LET[S.key[r.i]]}</b></td>${r.cnt.map((c,o)=>`<td class="c ${o===S.key[r.i]?'keycol':''} ${c===0&&o!==S.key[r.i]?'dim':''}">${c} <small class="dim">${pct(c,r.n)}</small></td>`).join('')}
+  <td class="c">${r.blank}</td><td class="c">${r.multi}</td><td class="num">${pct(r.right,r.n)}</td><td>${r.diff}</td><td class="num">${r.D==null?'—':r.D.toFixed(2)}</td><td>${r.disc}</td>
+  <td><span class="pill ${r.remark==='Keep'?'ok':r.remark==='Improve'?'warn':r.remark.startsWith('Need')?'':'bad'}">${r.remark}</span>${r.unused.length?` <small class="dim">No one chose ${r.unused.join(', ')}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function resultsView(){
+  const st=stats(),mx=fmt(maxScore());
+  const body=S.tab==='student'?studentAnalysis(st):S.tab==='option'?optionAnalysis(st):scoresTable(st);
+  return `<section class="panel">
+  <div class="head">${eyebrow(5)}<h1>Results: ${esc(S.exam.name)}</h1><p class="lede">${esc(S.exam.section)} · ${esc(S.exam.date)} · ${layoutText(S.cfg)} · +${fmt(S.cfg.mc)} correct${S.cfg.mi?`, −${fmt(S.cfg.mi)} wrong`:''}</p></div>
+  <div class="tiles"><div class="tile"><small>Scanned</small><b>${st.n}<span> / ${S.students.length}</span></b></div><div class="tile"><small>Average</small><b>${st.n?fmt(st.mean):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Highest</small><b>${st.n?fmt(st.hi):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Lowest</small><b>${st.n?fmt(st.lo):'—'}<span> / ${mx}</span></b></div></div>
+  <div class="big-actions">
+    ${NATIVE?`<button class="btn primary" data-act="shareExcel" ${st.n?'':'disabled'}>${ICON.share} Share results (Excel)</button>`:`<button class="btn primary" data-act="dlExcel" ${st.n?'':'disabled'}>${ICON.dl} Download results (Excel)</button>`}
+    <button class="btn" data-act="report" ${st.n?'':'disabled'}>${ICON.ext} View report</button>
+    <button class="btn" data-act="tab" data-t="student">Analysis by student response</button>
+    <button class="btn" data-act="tab" data-t="option">Analysis by option response</button>
+  </div>
+  <div class="tabs" role="tablist">${[['scores','Scores'],['student','Analysis by student response'],['option','Analysis by option response']].map(([t,l])=>`<button class="tab ${S.tab===t?'on':''}" role="tab" aria-selected="${S.tab===t}" data-act="tab" data-t="${t}">${l}</button>`).join('')}</div>
+  <div id="tabBody">${body}</div>
+  <p class="help" style="margin-top:12px">Excel file: <span class="mono">${esc(baseName())}.xlsx</span></p>
+  <div class="actions"><button class="btn" data-act="go" data-i="4">${ICON.cam} Back to scanning</button><button class="btn" data-act="newExam">Start a new exam</button></div>
+  </section>`;
+}
+function excelBytes(){
+  const q=S.cfg.q,head=['ROLL NO','STUDENT NAME',(S.exam.name||'SCORE').toUpperCase(),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
+  const rows=S.students.map(s=>{const r=S.results[rk(s.roll)],roll=/^0/.test(s.roll)?s.roll:Number(s.roll);
+    if(!r)return [roll,s.name,'',...Array(q).fill('')];const g=grade(r.ans);return [roll,s.name,g.score,...g.items.map(t=>t==='C'?'OK':'X')]});
+  const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
+  ws['!cols']=[{wch:10},{wch:33.57},{wch:15},...Array(q).fill({wch:11.57})];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'results');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+function reportHTML(){
+  const st=stats(),mx=fmt(maxScore());
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(baseName())} report</title>
+<style>body{font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#15202B;margin:0;background:#fff;padding:28px 18px;font-size:14px}main{max-width:1100px;margin:0 auto}
+h1{margin:0;font-size:26px}h2{font-size:18px;margin:34px 0 10px;padding-top:14px;border-top:2px solid #15202B}.dim{color:#56636E}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:18px 0}.tile{background:#EEF2F5;border-radius:10px;padding:12px}.tile small{display:block;color:#56636E}.tile b{font-size:22px}
+.tbl-wrap{overflow-x:auto;border:1px solid #D3DBE1;border-radius:8px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 9px;border-bottom:1px solid #D3DBE1;white-space:nowrap;text-align:left}th{background:#EEF2F5;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.num{text-align:right}.c{text-align:center}.mono{font-family:Consolas,monospace}.cell-c{color:#1B7A4C;font-weight:700}.cell-w{color:#BC3726;font-weight:700}.cell-b{color:#8A96A0}.cell-m{color:#9A6200;font-weight:700}.keycol{background:#DCF1E5;color:#1B7A4C;font-weight:700}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;background:#EEF2F5}.pill.ok{background:#DCF1E5;color:#1B7A4C}.pill.bad{background:#FAE2DD;color:#BC3726}.pill.warn{background:#FBEFD5;color:#9A6200}
+.legend{display:flex;gap:14px;margin-bottom:8px;font-size:12px}.btn{display:none}button{display:none}.print{display:inline-block;margin-top:12px;padding:8px 16px;border:1px solid #15202B;border-radius:8px;background:#fff;cursor:pointer;font:inherit}
+@media print{.print{display:none}body{padding:0}h2{break-before:auto}}</style></head><body><main>
+<h1>${esc(S.exam.name)}</h1><div class="dim">${esc(S.exam.section)} · ${esc(S.exam.date)} · ${layoutText(S.cfg)} · +${fmt(S.cfg.mc)} correct${S.cfg.mi?`, −${fmt(S.cfg.mi)} wrong`:''}</div>
+${NATIVE?'':'<a class="print" href="javascript:window.print()">Print this report</a>'}
+<div class="tiles"><div class="tile"><small>Scanned</small><b>${st.n} / ${S.students.length}</b></div><div class="tile"><small>Average</small><b>${st.n?fmt(st.mean):'—'} / ${mx}</b></div><div class="tile"><small>Median</small><b>${st.n?fmt(st.med):'—'}</b></div><div class="tile"><small>Highest</small><b>${fmt(st.hi)}</b></div><div class="tile"><small>Lowest</small><b>${fmt(st.lo)}</b></div></div>
+<h2>Scores</h2><div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th></tr></thead><tbody>
+${st.rows.map((x,i)=>`<tr><td class="num">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td>`:'<td class="num dim" colspan="5">Not scanned</td>'}</tr>`).join('')}</tbody></table></div>
+<h2>Analysis by student response</h2>${studentAnalysis(st)}
+<h2>Analysis by option response</h2>${optionAnalysis(st)}
+<p class="dim" style="margin-top:30px;font-size:12px">Made with Bubble Tsek · ${new Date().toLocaleString()}</p></main></body></html>`;
+}
+
+/* ================= actions ================= */
+function clampCfg(id,v){const f=FIELDS[id];v=Math.round(v/f.step)*f.step;return Math.min(f.max,Math.max(f.min,v))}
+function setCfg(id,v){
+  S.cfg[id]=v;if(FIELDS[id].layout){fitKey();S.sheetReady=S.sheetReady&&true}
+  const inp=$('#f-'+id);if(inp&&document.activeElement!==inp)inp.value=v;
+  const pv=$('#preview');if(pv)pv.innerHTML=sheetSVG(S.cfg);
+  if(id==='opt'){const h=inp&&inp.closest('.field').querySelector('.help');if(h)h.textContent=`Letters A–${LET[v-1]}. ${FIELDS.opt.help}`}
+  persist();
+}
+const ACT={
+  go:b=>{const i=+b.dataset.i;if(canOpen(i)){S.step=i;render();window.scrollTo({top:0,behavior:'smooth'})}},
+  closeModal:()=>closeModal(),
+  confirm:b=>{const f=CONFIRM[b.dataset.i];closeModal();f&&f()},
+  spin:b=>{const id=b.dataset.f,v=clampCfg(id,(+S.cfg[id])+(+b.dataset.d)*FIELDS[id].step);$('#f-'+id).value=v;$('#e-'+id).hidden=true;setCfg(id,v)},
+  next0:()=>{S.sheetReady=true;fitKey();S.step=1;render();window.scrollTo({top:0})},
+  dlSheet:()=>{if(!window.jspdf){toast('The PDF tool didn’t load. Check your internet and reload.','bad');return}
+    saveFile(`bubble-sheet_${S.cfg.q}-items_${S.cfg.opt}-choices_${S.cfg.roll}-digit-roll.pdf`,sheetPDF(S.cfg),'application/pdf')},
+  scanTemplate:()=>scannerModal('Scan an old bubble sheet','Hold the camera over a sheet printed from Bubble Tsek.','template',null,onTplCap),
+  tplRescan:()=>{closeModal();ACT.scanTemplate()},
+  tplUse:()=>{const cap=UI.cur;closeModal();S.cfg={...cap.cfg};S.key=cap.ans.map(a=>a.length===1?a[0]:null);S.keyFrom=S.key.some(v=>v!=null)?'scanned sheet':'';UI.keyErr=null;S.sheetReady=true;
+    if(keyComplete()){S.step=2;toast('Settings and answer key loaded from the sheet')}else{S.step=1;toast('Settings loaded from the sheet')}render()},
+  pickKey:()=>$('#fileKey').click(),
+  scanKey:()=>scannerModal('Scan the answer key','Shade the correct answers on one bubble sheet, then hold the camera over it.','key',S.cfg,onKeyCap),
+  keyRescan:()=>{closeModal();ACT.scanKey()},
+  keyUse:()=>{const cap=UI.cur;closeModal();S.key=cap.ans.map(a=>a.length===1?a[0]:null);S.keyFrom='scanned sheet';UI.keyErr=null;render();toast(keyComplete()?'Answer key saved':'Answer key added. Fill in the empty ones.')},
+  dlKeyTpl:()=>saveFile(`answer-key_${S.cfg.q}-items.csv`,'QUESTION,ANSWER\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''}`).join('\r\n')+'\r\n','text/csv'),
+  setKey:b=>{const q=+b.dataset.q,o=+b.dataset.o;S.key[q]=S.key[q]===o?null:o;S.keyFrom=S.keyFrom||'typed in';
+    const row=b.closest('.krow');row.querySelectorAll('.bub').forEach((x,i)=>{const on=S.key[q]===i;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on)});row.classList.toggle('miss',S.key[q]==null);
+    persist();const n=keyCount(),pill=$('#main .pill');if(pill){pill.className='pill '+(n===S.cfg.q?'ok':'warn');pill.textContent=n===S.cfg.q?'✓ Answer key complete':`${n} of ${S.cfg.q} answers set`}
+    const nx=$('#main .actions .btn.primary');if(nx)nx.disabled=!keyComplete();$('#stepper').innerHTML;renderStepperOnly()},
+  clearKey:()=>confirmBox('Clear the answer key?','All answers you set will be removed.',[{label:'Clear answers',cls:'danger',fn:()=>{S.key=Array(S.cfg.q).fill(null);S.keyFrom='';render()}}]),
+  pickList:()=>$('#fileList').click(),
+  dlListEx:()=>saveFile('example classlist with roll number.csv','STUDENT NAME,ROLL NO\r\n"ABESIA, ALEXA JOHNNYHL FABIA",301\r\n"AGATON, JENILYN DE JESUS",302\r\n"AGUILOR, KIRLYN DAPILAGA",303\r\n"ALBALADEJO, ELIJAH JARED IGNACIO",304\r\n"ANDRES, JOHN RANDELLE VERANO",305\r\n','text/csv'),
+  camStart:b=>{if(b&&b.dataset.p!=null&&b.dataset.p!==Cam.p)return;camStart()},
+  camStop:()=>camStop(),
+  photo:()=>{const f=$('#filePhoto');f.value='';f.click()},
+  sens:b=>{S.sens=+b.dataset.v;persist();$('#scanSide').innerHTML=scanSide()},
+  resDiscard:()=>{const sig=UI.cur.sig;closeModal();camResume(sig);toast('Discarded. Move the sheet away before scanning it again.')},
+  resEdit:()=>{UI.cur.editing=!UI.cur.editing;const e=$('#resEdit');e.hidden=!UI.cur.editing;e.innerHTML=UI.cur.editing?resEditor():'';refreshRes();if(UI.cur.editing)$('#edRoll').focus()},
+  edAns:b=>{const q=+b.dataset.q,o=+b.dataset.o,a=UI.cur.ans[q];const k=a.indexOf(o);if(k>=0)a.splice(k,1);else{a.push(o);a.sort()}
+    b.closest('.krow').querySelectorAll('.bub').forEach((x,i)=>{x.classList.toggle('on',a.includes(i));x.setAttribute('aria-pressed',a.includes(i))});refreshRes()},
+  resSave:()=>{const cur=UI.cur,st=studentMap()[cur.roll];if(!st)return;
+    S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();
+    const g=grade(cur.ans);closeModal();toast(`Saved: ${st.name}, ${fmt(g.score)}/${fmt(maxScore())}`);
+    const side=$('#scanSide');if(side)side.innerHTML=scanSide();renderStepperOnly();camResume(cur.sig)},
+  tab:b=>{S.tab=b.dataset.t;persist();render();const t=$('.tabs');if(t)t.scrollIntoView({behavior:'smooth',block:'start'})},
+  delRes:b=>{const r=b.dataset.r,s=studentMap()[r];confirmBox('Remove this score?',`${esc(s?s.name:r)}’s saved score will be removed. You can scan the sheet again.`,[{label:'Remove score',cls:'danger',fn:()=>{delete S.results[r];render()}}])},
+  shareExcel:()=>{if(!window.XLSX){toast('The Excel tool did not load. Please restart the app.','bad');return}
+    shareFile(baseName()+'.xlsx',excelBytes(),`${S.exam.name} – ${S.exam.section} results (${S.exam.date})`)},
+  shareReport:()=>shareFile(baseName()+'_report.html',reportHTML(),`${S.exam.name} – ${S.exam.section} report`),
+  dlExcel:()=>{if(!window.XLSX){toast('The Excel tool didn’t load. Check your internet and reload.','bad');return}saveFile(baseName()+'.xlsx',excelBytes(),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')},
+  report:()=>{const html=reportHTML();
+    if(NATIVE){openModal(`<div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">Report</h2><div style="display:flex;gap:8px"><button class="btn small" data-act="shareReport">${ICON.share} Share</button><button class="btn small" data-act="closeModal">Close</button></div></div><iframe id="repFrame" title="Report" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>`,{wide:true});$('#repFrame').srcdoc=html;return}let w=null;try{w=window.open('','_blank')}catch(e){}
+    if(w){try{w.document.open();w.document.write(html);w.document.close();return}catch(e){try{w.close()}catch(x){}}}
+    try{const u=URL.createObjectURL(new Blob([html],{type:'text/html'}));const w2=window.open(u,'_blank');if(w2)return}catch(e){}
+    toast('Your browser blocked the new tab, so the report will download instead.');saveFile(baseName()+'_report.html',html,'text/html')},
+  newExam:()=>confirmBox('Start a new exam?','Saved scores for this exam will be cleared. Download the Excel file first if you still need it.',[
+    {label:'Keep class list',fn:()=>{const k={students:S.students,listName:S.listName,sens:S.sens,cfg:S.cfg};S=Object.assign(fresh(),k);fitKey();UI.keyErr=UI.listErr=UI.listWarn=null;render()}},
+    {label:'Start fresh',cls:'primary',fn:()=>{S=fresh();UI.keyErr=UI.listErr=UI.listWarn=null;render()}}])
+};
+function renderStepperOnly(){const cur=S.step;$('#stepper').querySelectorAll('.st').forEach((b,i)=>{const done=stepDone(i)&&i!==cur;b.classList.toggle('done',done);b.disabled=!canOpen(i);b.querySelector('.st-b').textContent=done?'✓':i+1})}
+
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ACT[b.dataset.act];if(f){e.preventDefault();f(b,e)}});
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal'&&!$('#resSave'))closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal').hidden&&!$('#resSave'))closeModal()});
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.cfg){const id=t.dataset.cfg,f=FIELDS[id],v=parseFloat(t.value),er=$('#e-'+id);
+    const bad=isNaN(v)||v<f.min||v>f.max||Math.abs(Math.round(v/f.step)*f.step-v)>1e-9;
+    er.hidden=!bad;er.textContent=`Enter a number from ${f.min} to ${f.max}${f.step<1?' (steps of 0.5)':''}.`;if(!bad)setCfg(id,v)}
+  if(t.dataset.exam){S.exam[t.dataset.exam]=t.value;persist();const fn=$('#fname');if(fn)fn.textContent=baseName()+'.xlsx';const n=$('#next2');if(n)n.disabled=!detailsDone();renderStepperOnly()}
+  if(t.dataset.ed==='roll'){t.value=t.value.replace(/\D/g,'').slice(0,S.cfg.roll);UI.cur.roll=t.value.length===S.cfg.roll?t.value:t.value.padEnd(S.cfg.roll,'?');refreshRes()}
+});
+document.addEventListener('change',e=>{const t=e.target;if(t.dataset.cfg){const id=t.dataset.cfg,v=clampCfg(id,parseFloat(t.value)||FIELDS[id].min);t.value=v;$('#e-'+id).hidden=true;setCfg(id,v);renderStepperOnly()}});
+$('#fileKey').addEventListener('change',async e=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  try{
+    const rows=await readRows(file),q=S.cfg.q,opt=S.cfg.opt,letters=LET.slice(0,opt),errs=[],key=Array(q).fill(null);
+    let data=rows;if(data.length&&!/^\s*\d+\s*$/.test(data[0][0])&&!/^\s*[a-e]\s*$/i.test(data[0][0]))data=data.slice(1);
+    const oneCol=data.every(r=>r.filter(c=>String(c).trim()!=='').length<=1)&&data.every(r=>!/^\s*\d+\s*$/.test(r[0]));
+    if(!data.length)errs.push('The file has no answers.');
+    data.forEach((r,idx)=>{
+      let n,a;if(oneCol){n=idx+1;a=String(r[0]??'').trim().toUpperCase()}else{n=String(r[0]??'').trim();a=String(r[1]??'').trim().toUpperCase()}
+      if(!/^\d+$/.test(String(n))){errs.push(`Row ${idx+2}: “${n}” is not a question number.`);return}
+      n=+n;if(n<1||n>q){errs.push(`Question ${n} is in the file, but your bubble sheet has only ${q} question${q>1?'s':''}.`);return}
+      if(!a){errs.push(`Question ${n} has no answer.`);return}
+      if(!letters.includes(a)||a.length!==1){errs.push(`Question ${n}: “${a}” is not a valid choice. Your sheet only has ${letters.split('').join(', ')}.`);return}
+      if(key[n-1]!=null&&key[n-1]!==letters.indexOf(a))errs.push(`Question ${n} appears more than once with different answers.`);
+      key[n-1]=letters.indexOf(a);
+    });
+    const miss=key.map((v,i)=>v==null?i+1:null).filter(Boolean);
+    if(miss.length&&miss.length<q)errs.push(`Missing answers for question${miss.length>1?'s':''} ${miss.slice(0,12).join(', ')}${miss.length>12?'…':''}.`);
+    else if(miss.length===q&&data.length)errs.push('No usable answers were found.');
+    if(errs.length){UI.keyErr=[...new Set(errs)];render();alertBox('This answer key doesn’t fit your bubble sheet',UI.keyErr);return}
+    S.key=key;S.keyFrom=file.name;UI.keyErr=null;render();toast('Answer key uploaded');
+  }catch(err){UI.keyErr=[err.message||'The file could not be read.'];render();alertBox('Couldn’t read the file',UI.keyErr)}
+});
+$('#fileList').addEventListener('change',async e=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  try{
+    const rows=await readRows(file),errs=[],warns=[];
+    if(!rows.length)throw new Error('The file is empty.');
+    const head=rows[0].map(c=>String(c).trim().toUpperCase()),ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>h.includes('ROLL'));
+    if(ni<0||ri<0)throw new Error('The first row must have the column names STUDENT NAME and ROLL NO, like the example file.');
+    const list=[];
+    rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim(),roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
+      if(!name&&!roll)return;if(!roll){errs.push(`Line ${line}: ${name} has no roll number.`);return}
+      if(!/^\d+$/.test(roll)){errs.push(`Line ${line}: roll number “${roll}” should only have digits.`);return}
+      if(!name)warns.push(`Line ${line}: roll number ${roll} has no name.`);list.push({name:name||'(no name)',roll})});
+    if(!list.length&&!errs.length)errs.push('No students were found under the column names.');
+    if(errs.length){UI.listErr=errs;UI.listWarn=null;render();alertBox('We couldn’t use that file',errs);return}
+    S.students=list;S.listName=file.name;UI.listErr=null;UI.listWarn=warns;render();
+    const iss=listIssues();if(iss.length)alertBox('Please fix the class list',iss);else toast(`${list.length} students loaded`);
+  }catch(err){UI.listErr=[err.message];render();alertBox('We couldn’t use that file',UI.listErr)}
+});
+$('#filePhoto').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;
+  if(!Cam.onCap){toast('Open the scanner first.','bad');return}photoPicked(f)});
+if(S.key.length!==S.cfg.q)fitKey();
+if(NATIVE){$('#fileKey').removeAttribute('accept');$('#fileList').removeAttribute('accept');document.documentElement.classList.add('native')}
+render();
+</script>
+</body>
+</html>
