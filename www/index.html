@@ -177,6 +177,14 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:12px 18px;border-radius:12px;font-weight:500;z-index:80;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
 .toast.bad{background:var(--bad);color:#fff}
 .spacer{height:14px}
+/* sync chip */
+.sync-chip{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:6px 12px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);color:var(--muted);font-size:.85rem;font-weight:500;cursor:pointer}
+.sync-chip svg{width:18px;height:18px}
+.sync-chip.ok{color:var(--ok);border-color:var(--ok-soft);background:var(--ok-soft)}
+.sync-chip.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-soft)}
+.sync-chip.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-soft)}
+.sync-chip.busy{color:var(--accent);background:var(--accent-soft);border-color:var(--accent-soft)}
+@media (max-width:480px){.sync-chip span{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 /* classes */
 .ctx{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:.88rem;color:var(--muted);margin:-4px 0 10px}
 .ctx b{color:var(--ink)}.ctx-sep{opacity:.5}.ctx .btn{margin-left:auto;min-height:32px;padding:4px 10px}
@@ -213,7 +221,7 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
       <div class="logo" aria-hidden="true"><i></i><i class="f"></i><i></i><i class="f"></i><i></i><i></i></div>
       <div><b>Bubble Tsek</b><small>Bubble sheet checker for teachers</small></div>
     </div>
-    <div style="display:flex;gap:8px"><button class="btn small" data-act="goClasses" id="btnClasses">My classes</button><button class="btn small" data-act="newExam" id="btnNew">New exam</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="sync-chip idle" id="syncChip" data-act="syncChip" hidden></button><button class="btn small" data-act="goClasses" id="btnClasses">My classes</button><button class="btn small" data-act="newExam" id="btnNew">New exam</button></div>
   </header>
   <div id="ctx"></div>
   <nav class="stepper" id="stepper" aria-label="Steps"></nav>
@@ -588,6 +596,7 @@ const ICON={
 
 /* ================= render ================= */
 function render(){
+  try{paintSyncChip()}catch(e){}
   if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():classesView();persist();return}
   $('#stepper').hidden=false;syncClass();$('#ctx').innerHTML=ctxBar();
   if(S.step!==4)camClose();
@@ -1252,6 +1261,7 @@ function classesView(){
     <button class="btn" data-act="newClass">+ New class</button>
     <button class="btn" data-act="addSubject">+ Add subject</button>
     <button class="btn" data-act="dlClassesEx">${ICON.dl} Example CSV</button>
+    <button class="btn" data-act="syncOpen">Google Drive sync</button>
   </div>`}
   ${groups.map(g=>`<h2 class="grp-h">${g.s?esc(g.s):'No subject'} <span class="dim" style="font-weight:400;font-size:.9rem">${g.list.length} class${g.list.length===1?'':'es'}</span></h2>
     ${g.list.length?`<div class="cls-grid">${g.list.map(c=>{const ex=examsOf(c.id);return `<button class="cls-card" data-act="openClass" data-id="${c.id}"><b>${esc(c.section)}</b><span>${c.students.length} student${c.students.length===1?'':'s'}</span><span>${ex.length} exam${ex.length===1?'':'s'}</span></button>`}).join('')}</div>`:`<p class="dim" style="margin:0 0 14px">No classes yet${past?'':' — upload a CSV or tap “New class”'}.</p>`}`).join('')}
@@ -1572,6 +1582,281 @@ $('#fileClass').addEventListener('change',async e=>{
   }catch(err){alertBox('We couldn’t use that file',[err.message])}
 });
 initLibrary();
+
+/* ================= PHASE 3a: Google Drive sync (website) ================= */
+const SYNC_KEY='bubbletsek.sync',DRIVE_CACHE_KEY='bubbletsek.drivecache';
+const EXPECTED_ACCOUNT='learning.edisonungriano@gmail.com';
+const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file openid email';
+const GAPI='https://www.googleapis.com';
+const Sync={cfg:{clientId:'',email:'',auto:true,lastSync:0},token:null,tokenExp:0,busy:false,timer:null,status:'',err:'',tc:null};
+try{Object.assign(Sync.cfg,JSON.parse(localStorage.getItem(SYNC_KEY)||'{}'))}catch(e){}
+const saveSyncCfg=()=>{try{localStorage.setItem(SYNC_KEY,JSON.stringify(Sync.cfg))}catch(e){}};
+let DC={};try{DC=JSON.parse(localStorage.getItem(DRIVE_CACHE_KEY)||'{}')}catch(e){}
+const saveDC=()=>{try{localStorage.setItem(DRIVE_CACHE_KEY,JSON.stringify(DC))}catch(e){}};
+const tokenOk=()=>Sync.token&&Date.now()<Sync.tokenExp-60000;
+const hash36=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(36)};
+
+/* --- library bookkeeping: tombstones + picture timestamps (synced) --- */
+function ensureSyncFields(){LIB.tomb=LIB.tomb||{};LIB.picMeta=LIB.picMeta||{};LIB.drivePics=LIB.drivePics||{};LIB.savedAt=LIB.savedAt||Date.now();LIB.known=LIB.known||knownIds()}
+function knownIds(){return [...LIB.classes.map(c=>'c:'+c.id),...Object.keys(LIB.exams).map(id=>'x:'+id),...LIB.terms.map(t=>'t:'+t.id)]}
+function libSave(){
+  if(LIB.tomb){const now=Date.now(),cur=new Set(knownIds());(LIB.known||[]).forEach(k=>{if(!cur.has(k))LIB.tomb[k]=now});LIB.known=[...cur];LIB.savedAt=now}
+  try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){toast('Phone storage is full. Remove old pictures or exams.','bad')}
+  try{scheduleSync()}catch(e){}
+}
+// Only mark an exam as changed when its real content changes (not when you just move between steps).
+function libSaveExam(){
+  if(!LIB||!S.id)return;
+  const data=examSnapshot(),sig=o=>{const c=Object.assign({},o);delete c.step;delete c.tab;return JSON.stringify(c)};
+  const old=LIB.exams[S.id],rs=Object.values(S.results||{}),max=S.cfg.q*S.cfg.mc;
+  const has=rs.length||S.exam.name.trim()||S.sheetReady;
+  if(!has&&!old)return;
+  if(old&&sig(old.data)===sig(data)){old.data.step=data.step;old.data.tab=data.tab;LIB.curExam=S.id;try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){}return}
+  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,S.key).score,0)/rs.length:0;
+  LIB.exams[S.id]={id:S.id,data,updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
+  LIB.curExam=S.id;libSave();
+}
+function savePic(cur){
+  try{const c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;c.getContext('2d').putImageData(cur.base,0,0);
+    const key=picKey(cur.roll);
+    c.toBlob(b=>{if(!b)return;PicDB.put(key,b).then(()=>{LIB.picMeta[key]=Date.now();delete LIB.tomb['p:'+key];libSave()}).catch(()=>{})},'image/jpeg',0.8)}catch(e){}
+}
+function markPicGone(key){if(LIB.picMeta[key]||LIB.drivePics[key]){delete LIB.picMeta[key];LIB.tomb['p:'+key]=Date.now()}}
+function picDel(roll,examId){const key=picKey(roll,examId);PicDB.del(key).catch(()=>{});markPicGone(key);libSave()}
+{const orig=PicDB.delPrefix.bind(PicDB);PicDB.delPrefix=async function(prefix){Object.keys(LIB.picMeta).filter(k=>k.startsWith(prefix)).forEach(markPicGone);const n=await orig(prefix);libSave();return n}}
+
+/* --- picture viewing on a device that doesn't have it yet (e.g. laptop) --- */
+{const origGet=PicDB.get.bind(PicDB);PicDB.get=async function(k){
+  let b=await origGet(k).catch(()=>null);if(b)return b;
+  const d=LIB.drivePics&&LIB.drivePics[k];
+  if(d&&tokenOk()){try{const r=await gfetch(`${GAPI}/drive/v3/files/${d.id}?alt=media`);if(r.ok){b=await r.blob();await PicDB.put(k,b).catch(()=>{});return b}}catch(e){}}
+  return null}}
+
+/* --- Google sign-in (Google Identity Services token model) --- */
+function loadGIS(){
+  if(window.google&&google.accounts&&google.accounts.oauth2)return Promise.resolve();
+  return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=()=>res();s.onerror=()=>rej(new Error('Could not reach Google. Check your internet connection.'));document.head.appendChild(s)});
+}
+/* Phase 3b: native Google sign-in in the Android app (DriveAuth plugin in MainActivity) */
+const DriveAuth=NATIVE?plug('DriveAuth'):null;
+async function nativeToken(interactive){
+  let r;
+  try{r=await DriveAuth.authorize({interactive:!!interactive})}
+  catch(e){const code=String(e&&e.code||''),m=String(e&&e.message||e);
+    if(code==='NEEDS_CONSENT')throw new Error('signin');
+    if(code==='CANCELED'||code==='16'||code==='12501')throw new Error('Sign-in was cancelled.');
+    if(code==='NO_SCOPE'){Sync.needConsent=true;throw new Error('scope')}
+    if(code==='10')throw new Error('Google sign-in isn’t set up for the phone app yet. Add the Android client in Google Cloud (see the setup guide).');
+    if(code==='7'||/network/i.test(m))throw new Error('Could not reach Google. Check your internet connection.');
+    throw new Error('Google sign-in failed ('+(code||'?')+'): '+m)}
+  Sync.needConsent=false;Sync.token=r.accessToken;Sync.tokenExp=Date.now()+50*60*1000;return r.accessToken;
+}
+function nativeDropToken(){if(NATIVE&&Sync.token){try{DriveAuth.clearToken({token:Sync.token})}catch(e){}}}
+async function getToken(interactive){
+  if(tokenOk())return Sync.token;
+  if(NATIVE)return nativeToken(interactive);
+  if(!interactive)throw new Error('signin');
+  if(!Sync.cfg.clientId)throw new Error('noclient');
+  await loadGIS();
+  return new Promise((res,rej)=>{
+    const tc=google.accounts.oauth2.initTokenClient({client_id:Sync.cfg.clientId,scope:DRIVE_SCOPE,
+      callback:r=>{if(r.error){rej(new Error(r.error_description||r.error));return}if(!google.accounts.oauth2.hasGrantedAllScopes(r,'https://www.googleapis.com/auth/drive.file')){Sync.needConsent=true;rej(new Error('scope'));return}Sync.needConsent=false;Sync.token=r.access_token;Sync.tokenExp=Date.now()+(+r.expires_in||3600)*1000;res(r.access_token)},
+      error_callback:e=>rej(new Error(e&&e.type==='popup_closed'?'Sign-in window was closed.':(e&&e.message)||'Sign-in failed'))});
+    tc.requestAccessToken({prompt:(Sync.cfg.email&&!Sync.needConsent)?'':'consent',login_hint:Sync.cfg.email||EXPECTED_ACCOUNT});
+  });
+}
+async function gfetch(url,opt={},retry=true){
+  const r=await fetch(url,Object.assign({},opt,{headers:Object.assign({Authorization:'Bearer '+Sync.token},opt.headers||{})}));
+  if(r.status===401){nativeDropToken();Sync.token=null;throw new Error('signin')}
+  if(r.status===403&&/insufficient/i.test(r.headers.get('www-authenticate')||'')){nativeDropToken();Sync.token=null;Sync.needConsent=true;throw new Error('scope')}
+  if(r.status===403){const t=await r.clone().text();if(/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(t)){nativeDropToken();Sync.token=null;Sync.needConsent=true;throw new Error('scope')}}
+  if((r.status===429||r.status>=500)&&retry){await new Promise(z=>setTimeout(z,1500));return gfetch(url,opt,false)}
+  return r;
+}
+async function gjson(url,opt){const r=await gfetch(url,opt);if(!r.ok)throw new Error(`Google Drive error ${r.status}: ${(await r.text()).slice(0,160)}`);return r.status===204?null:r.json()}
+
+/* --- Drive helpers --- */
+const qenc=s=>encodeURIComponent(s);
+async function findByProp(key,val,extra){
+  const query=`appProperties has { key='${key}' and value='${val}' } and trashed=false${extra?' and '+extra:''}`;
+  const d=await gjson(`${GAPI}/drive/v3/files?q=${qenc(query)}&fields=files(id,name,modifiedTime)&spaces=drive&pageSize=10`);
+  return d.files&&d.files[0]||null;
+}
+async function createFolder(name,parent,props){
+  return gjson(`${GAPI}/drive/v3/files?fields=id`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',parents:parent?[parent]:undefined,appProperties:props})});
+}
+async function ensureRoot(){
+  if(DC.rootId)return DC.rootId;
+  let f=await findByProp('bt','root');if(!f)f=await createFolder('Bubble Tsek',null,{bt:'root'});
+  DC.rootId=f.id;saveDC();return f.id;
+}
+async function ensureFolderPath(parts){
+  let parent=await ensureRoot(),path='';DC.folders=DC.folders||{};
+  for(const name of parts){
+    path+='/'+name;const h=hash36(path);
+    if(!DC.folders[h]){let f=await findByProp('bfp',h);if(!f)f=await createFolder(safeName(name)||'Untitled',parent,{bt:'folder',bfp:h});DC.folders[h]=f.id;saveDC()}
+    parent=DC.folders[h];
+  }
+  return parent;
+}
+async function uploadFile({id,name,parent,mime,data,props}){
+  const meta=id?{name}:{name,parents:[parent],appProperties:props};
+  const boundary='bt'+Math.random().toString(36).slice(2);
+  const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,data,`\r\n--${boundary}--`]);
+  const url=id?`${GAPI}/upload/drive/v3/files/${id}?uploadType=multipart&fields=id`:`${GAPI}/upload/drive/v3/files?uploadType=multipart&fields=id`;
+  return gjson(url,{method:id?'PATCH':'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body});
+}
+async function trashFile(id){try{await gjson(`${GAPI}/drive/v3/files/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:true})})}catch(e){}}
+
+/* --- merge: newest record wins; deletions win over older copies --- */
+function mergeLib(remote){
+  if(!remote||!remote.terms)return false;
+  const L=LIB,tomb=Object.assign({},L.tomb||{});
+  Object.entries(remote.tomb||{}).forEach(([k,v])=>{if(!(tomb[k]>=v))tomb[k]=v});
+  const alive=(k,t)=>!(tomb[k]&&tomb[k]>=(t||0));
+  let changed=false;
+  // same semester name created separately on two devices → treat as one (use the id from Drive)
+  (remote.terms||[]).forEach(rt=>{if(L.terms.some(t=>t.id===rt.id))return;const lt=L.terms.find(t=>normKey(t.name)===normKey(rt.name));if(!lt)return;
+    const from=lt.id,to=rt.id;L.classes.forEach(c=>{if(c.termId===from)c.termId=to});Object.values(L.exams).forEach(x=>{if(x.data.termId===from)x.data.termId=to});
+    if(S.termId===from)S.termId=to;if(L.curTerm===from)L.curTerm=to;if(UI.termView===from)UI.termView=to;
+    lt.id=to;lt.subjects=[...new Set([...lt.subjects,...rt.subjects])];lt.archived=lt.archived||rt.archived;changed=true});
+  // terms
+  (remote.terms||[]).forEach(rt=>{if(!alive('t:'+rt.id,0))return;const lt=L.terms.find(t=>t.id===rt.id);
+    if(!lt){L.terms.push(rt);changed=true}else{const subs=[...new Set([...lt.subjects,...rt.subjects])];if(subs.length!==lt.subjects.length||(rt.archived&&!lt.archived)){lt.subjects=subs;lt.archived=lt.archived||rt.archived;changed=true}if(rt.name!==lt.name&&(remote.savedAt||0)>(L.savedAt||0)){lt.name=rt.name;changed=true}}});
+  if((remote.savedAt||0)>(L.savedAt||0)&&remote.curTerm&&L.terms.find(t=>t.id===remote.curTerm)&&!termOf(remote.curTerm).archived)L.curTerm=remote.curTerm;
+  // classes
+  (remote.classes||[]).forEach(rc=>{const i=L.classes.findIndex(c=>c.id===rc.id);
+    if(i<0){if(alive('c:'+rc.id,rc.updatedAt)){L.classes.push(rc);changed=true}}
+    else if((rc.updatedAt||0)>(L.classes[i].updatedAt||0)){L.classes[i]=rc;changed=true}});
+  L.classes=L.classes.filter(c=>alive('c:'+c.id,c.updatedAt));
+  // exams
+  Object.values(remote.exams||{}).forEach(rx=>{const lx=L.exams[rx.id];
+    if(!lx){if(alive('x:'+rx.id,rx.updatedAt)){L.exams[rx.id]=rx;changed=true}}
+    else if((rx.updatedAt||0)>(lx.updatedAt||0)){L.exams[rx.id]=rx;changed=true}});
+  Object.keys(L.exams).forEach(id=>{if(!alive('x:'+id,L.exams[id].updatedAt)){delete L.exams[id];changed=true}});
+  // pictures
+  const rpm=remote.picMeta||{};Object.keys(rpm).forEach(k=>{if(!alive('p:'+k,rpm[k]))return;if(!(L.picMeta[k]>=rpm[k])){L.picMeta[k]=rpm[k];changed=true}});
+  Object.keys(L.picMeta).forEach(k=>{if(!alive('p:'+k,L.picMeta[k]))delete L.picMeta[k]});
+  const rdp=remote.drivePics||{};Object.keys(rdp).forEach(k=>{if(!L.drivePics[k]||(rdp[k].at||0)>(L.drivePics[k].at||0)){L.drivePics[k]=rdp[k];changed=true}});
+  L.tomb=tomb;L.known=knownIds();
+  return changed;
+}
+
+/* --- the lookup index for the Score Lookup (Phase 3c) --- */
+function buildLookupIndex(){
+  const out=[];
+  Object.values(LIB.exams).forEach(x=>{const d=x.data,c=getClass(d.classId),t=termOf(d.termId);if(!c||!d.results)return;
+    const byRoll={};c.students.forEach(s=>{byRoll[String(s.roll).padStart(d.cfg.roll,'0')]=s});
+    Object.values(d.results).forEach(r=>{const st=byRoll[r.roll];const k=x.id+'|'+rollKey(r.roll);
+      out.push({term:t?t.name:'',subject:c.subject,section:c.section,exam:d.exam.name,date:d.exam.date,name:st?st.name:'',roll:r.roll,
+        score:gradeWith(r.ans,d.cfg,d.key).score,maxScore:d.cfg.q*d.cfg.mc,fileId:LIB.drivePics[k]?LIB.drivePics[k].id:null,updatedAt:r.at||x.updatedAt})})});
+  return {generatedAt:new Date().toISOString(),account:Sync.cfg.email,entries:out};
+}
+
+/* --- one full sync --- */
+async function runSync(interactive){
+  if(Sync.busy)return;if(!navigator.onLine){setSyncStatus('offline');return}
+  Sync.busy=true;setSyncStatus('syncing');
+  try{
+    await getToken(interactive);
+    if(!Sync.cfg.email){try{const u=await gjson(`${GAPI}/oauth2/v3/userinfo`);Sync.cfg.email=u.email||'';saveSyncCfg()}catch(e){}
+      if(!Sync.cfg.email){try{const a=await gjson(`${GAPI}/drive/v3/about?fields=user(emailAddress)`);Sync.cfg.email=(a.user&&a.user.emailAddress)||'';saveSyncCfg()}catch(e){}}}
+    persist();
+    const root=await ensureRoot();
+    // 1) pull + merge
+    if(!DC.dataId){const f=await findByProp('bt','data');if(f){DC.dataId=f.id;saveDC()}}
+    if(DC.dataId){const r=await gfetch(`${GAPI}/drive/v3/files/${DC.dataId}?alt=media`);
+      if(r.status===404){DC.dataId=null;saveDC()}else if(r.ok){const remote=await r.json().catch(()=>null);if(mergeLib(remote))reloadActiveExam()}}
+    // 2) pictures: upload new/changed, trash deleted
+    try{(await PicDB.keys('')).forEach(k=>{k=String(k);if(!LIB.picMeta[k]&&!LIB.drivePics[k]&&!LIB.tomb['p:'+k]&&LIB.exams[k.split('|')[0]])LIB.picMeta[k]=1})}catch(e){}  // pictures taken before sync existed
+    const keys=Object.keys(LIB.picMeta);let up=0;
+    for(const k of keys){const dp=LIB.drivePics[k];if(dp&&dp.at>=LIB.picMeta[k])continue;
+      const blob=await PicDB.get(k).catch(()=>null);if(!blob)continue;
+      const [examId,rk_]=k.split('|'),x=LIB.exams[examId];if(!x)continue;const d=x.data,c=getClass(d.classId),t=termOf(d.termId);
+      const st=c&&c.students.find(s=>rollKey(s.roll)===rk_);
+      const folder=await ensureFolderPath([t?t.name:'Semester',c&&c.subject||'No subject',c?c.section:(d.exam.section||'No class'),d.exam.name||'Untitled exam']);
+      const name=safeName(`${(d.exam.name||'EXAM').toUpperCase()} – ${c?c.section:''} – ${st?st.name:'Student'} (${st?st.roll:rk_})`)+'.jpg';
+      const res=await uploadFile({id:dp&&dp.id,name,parent:folder,mime:'image/jpeg',data:blob,props:{bt:'pic',k:hash36(k)}});
+      LIB.drivePics[k]={id:res.id,at:LIB.picMeta[k]};up++;
+      setSyncStatus('syncing',`Uploading pictures… ${up}`);
+    }
+    for(const k of Object.keys(LIB.drivePics)){if(LIB.picMeta[k])continue;if(LIB.tomb['p:'+k]){await trashFile(LIB.drivePics[k].id);delete LIB.drivePics[k]}}
+    // 3) push data + lookup index
+    LIB.known=knownIds();try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){}
+    const dataBlob=new Blob([JSON.stringify(LIB)],{type:'application/json'});
+    const dres=await uploadFile({id:DC.dataId,name:'bubbletsek-data.json',parent:root,mime:'application/json',data:dataBlob,props:{bt:'data'}});DC.dataId=dres.id;
+    if(!DC.indexId){const f=await findByProp('bt','index');if(f)DC.indexId=f.id}
+    const ires=await uploadFile({id:DC.indexId,name:'bubbletsek-lookup-index.json',parent:root,mime:'application/json',data:new Blob([JSON.stringify(buildLookupIndex())],{type:'application/json'}),props:{bt:'index'}});DC.indexId=ires.id;saveDC();
+    Sync.cfg.lastSync=Date.now();saveSyncCfg();Sync.err='';setSyncStatus('ok');
+  }catch(e){
+    const m=String(e&&e.message||e);
+    if(m==='signin'){setSyncStatus('signin')}
+    else if(m==='noclient'){setSyncStatus('setup');if(interactive)openSyncPanel()}
+    else if(m==='scope'){Sync.err='Google Drive permission was not given.';setSyncStatus('signin');if(interactive)alertBox('Please allow Google Drive',['On the Google sign-in page, tick the box that says “See, edit, create, and delete only the specific Google Drive files you use with this app”.','Then tap Continue. Tap Sync now to try again.'],'warn')}
+    else{Sync.err=m;setSyncStatus('error');if(interactive)alertBox('Sync didn’t finish',[m,'Your data is safe on this device. Try Sync now again in a moment.'],'warn')}
+    if(/404/.test(m)){DC={};saveDC()}
+  }finally{Sync.busy=false}
+}
+function reloadActiveExam(){
+  const rec=LIB.exams[S.id];if(!rec)return;
+  if(Cam.running||!$('#modal').hidden)return;
+  const mine=JSON.stringify(examSnapshot()),theirs=JSON.stringify(rec.data);if(mine===theirs)return;
+  const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);const step=S.step,tab=S.tab;
+  S=Object.assign(fresh(),JSON.parse(theirs),g,{step,tab});
+  try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}
+  render();
+}
+function scheduleSync(){
+  if(Sync.busy)return;
+  if(!Sync.cfg.auto||!Sync.cfg.email||(!NATIVE&&!Sync.cfg.clientId))return;
+  clearTimeout(Sync.timer);Sync.timer=setTimeout(()=>{if(tokenOk()||NATIVE)runSync(false);else setSyncStatus('signin')},4000);
+}
+window.addEventListener('online',()=>{if(tokenOk()||(NATIVE&&Sync.cfg.email&&Sync.cfg.auto))runSync(false)});
+if(NATIVE)document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Sync.cfg.email&&Sync.cfg.auto)scheduleSync()});
+
+/* --- status chip in the header --- */
+function setSyncStatus(st,text){Sync.status=st;Sync.statusText=text||'';paintSyncChip()}
+function ago(t){if(!t)return 'never';const s=Math.round((Date.now()-t)/1000);if(s<60)return 'just now';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return new Date(t).toLocaleDateString()}
+function paintSyncChip(){
+  const el=$('#syncChip');if(!el)return;
+  const s=Sync.status||(Sync.cfg.email?((tokenOk()||NATIVE)?'ok':'signin'):'setup');
+  const map={setup:['Set up Drive sync','idle'],signin:['Tap to sync','warn'],syncing:[Sync.statusText||'Syncing…','busy'],ok:['Synced '+ago(Sync.cfg.lastSync),'ok'],error:['Sync problem','bad'],offline:['Offline · will sync later','warn']};
+  const [label,kind]=map[s]||map.setup;
+  el.className='sync-chip '+kind;el.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>${esc(label)}</span>`;
+  el.hidden=false;
+}
+setInterval(paintSyncChip,30000);
+
+/* --- Sync panel --- */
+function openSyncPanel(){
+  const c=Sync.cfg,signed=!!c.email,wrong=signed&&c.email.toLowerCase()!==EXPECTED_ACCOUNT;
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Google Drive sync</p><h2 style="margin:0">${signed?'Syncing to '+esc(c.email):'Not set up yet'}</h2></div><button class="btn small" data-act="closeModal">Close</button></div>
+    ${wrong?`<div class="alert warn" style="margin-top:12px">Your Score Lookup spreadsheet is in <b>${EXPECTED_ACCOUNT}</b>. Sign out and sign in with that account so the lookup can find your pictures.</div>`:''}
+    <p class="dim" style="max-width:60ch">Classes, scores and scanned pictures are saved to a <b>Bubble Tsek</b> folder in your Google Drive. Sign in with the same Google account on your other phone or laptop to see everything there. The app can only see files it made — not the rest of your Drive.</p>
+    <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0"><div class="tile"><small>Last sync</small><b style="font-size:1.05rem">${ago(c.lastSync)}</b></div><div class="tile"><small>Classes</small><b style="font-size:1.05rem">${LIB.classes.length}</b></div><div class="tile"><small>Pictures in Drive</small><b style="font-size:1.05rem">${Object.keys(LIB.drivePics).length}</b></div></div>
+    ${Sync.err?`<div class="alert bad">Last error: ${esc(Sync.err)}</div>`:''}
+    <div class="tgl-row card" style="margin:12px 0"><div><b>Sync automatically</b><p class="help">A few seconds after each change, while you’re signed in.</p></div><button class="tgl ${c.auto?'on':''}" role="switch" aria-checked="${c.auto}" aria-label="Sync automatically" data-act="syncAuto"><i></i></button></div>
+    ${NATIVE?'':`<details ${c.clientId?'':'open'} style="margin:10px 0"><summary style="cursor:pointer;font-weight:600">Setup: Google Client ID</summary>
+      <div class="field" style="margin-top:10px"><label for="syncClient">Client ID (from Google Cloud)</label><input class="txt mono" id="syncClient" value="${esc(c.clientId)}" placeholder="1234567890-abc123.apps.googleusercontent.com" autocomplete="off"><p class="help">Paste it once on each device. See the setup guide.</p></div>
+      <button class="btn small" data-act="syncSaveClient" style="margin-top:8px">Save Client ID</button></details>`}
+    <div class="actions">${signed?'<button class="btn" data-act="syncSignOut">Sign out</button>':'<span></span>'}<button class="btn primary" data-act="syncNow">${signed?'Sync now':'Sign in with Google & sync'}</button></div>`,{wide:true});
+}
+Object.assign(ACT,{
+  syncOpen:()=>openSyncPanel(),
+  syncChip:()=>{if(Sync.cfg.email&&(NATIVE||Sync.cfg.clientId)&&Sync.status!=='syncing'&&!tokenOk())runSync(true);else openSyncPanel()},
+  syncNow:()=>{if(!NATIVE&&!Sync.cfg.clientId){toast('Paste your Google Client ID first.','bad');const d=$('#modal details');if(d)d.open=true;return}closeModal();runSync(true)},
+  syncAuto:()=>{Sync.cfg.auto=!Sync.cfg.auto;saveSyncCfg();openSyncPanel()},
+  syncSaveClient:()=>{const v=($('#syncClient').value||'').trim();
+    if(v&&!/^[\w-]+\.apps\.googleusercontent\.com$/.test(v)){toast('That doesn’t look like a Client ID. It ends with .apps.googleusercontent.com','bad');return}
+    Sync.cfg.clientId=v;saveSyncCfg();toast(v?'Client ID saved':'Client ID removed');openSyncPanel()},
+  syncSignOut:()=>confirmBox('Sign out of Google Drive?','Your data stays on this device and in Drive. Sync stops until you sign in again.',[{label:'Sign out',cls:'danger',fn:()=>{
+    try{if(Sync.token&&window.google&&google.accounts)google.accounts.oauth2.revoke(Sync.token,()=>{})}catch(e){}
+    if(NATIVE&&Sync.token){const t=Sync.token;fetch('https://oauth2.googleapis.com/revoke?token='+encodeURIComponent(t),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'}}).catch(()=>{});nativeDropToken()}
+    Sync.token=null;Sync.cfg.email='';Sync.cfg.lastSync=0;saveSyncCfg();DC={};saveDC();setSyncStatus('setup');toast('Signed out')}}])
+});
+ensureSyncFields();
+if(NATIVE&&Sync.cfg.email&&Sync.cfg.auto)setTimeout(()=>runSync(false),2500);
+
 
 if(S.key.length!==S.cfg.q)fitKey();
 if(NATIVE){['fileKey','fileList','fileClasses','fileClass'].forEach(id=>$('#'+id).removeAttribute('accept'));document.documentElement.classList.add('native')}
