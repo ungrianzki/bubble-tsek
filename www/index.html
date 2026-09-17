@@ -242,6 +242,8 @@ const PG={w:215.9,h:279.4};
 const FR={L:13,T:54,R:203,B:266}, FW=190, FH=212, MK=10;   // corner-marker centres
 const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer area inside the markers
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
+const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
+const VLET='AB';
 const SMAX=1.8, VSTRETCH=1.5, HSTRETCH=1.4, GH=33.8, RB=77, GAP=1.2;
 const MARK_MIN={1:0.16,2:0.25,3:0.38};
 const FIELDS={
@@ -326,6 +328,11 @@ function sheetPrims(cfg){
   if(G.ans.length&&G.ans[0].x===x0){T('Answer Starts Here',X(rc),Y(r9+(71-64.4)*vy),fs,'center');T('only shade 1 answer',X(rc),Y(r9+(74.8-64.4)*vy),fs*.85,'center')}
   G.groups.forEach(g=>{for(let o=0;o<cfg.opt;o++)T(LET[o],X(g.x+(10.5+o*6)*hx),Y(g.v),fs*.92,'center',true)});
   G.ans.forEach((a,i)=>{T(String(i+1),X(a.x+7.2*hx),Y(a.v+fs*.13),fs,'right');a.opts.forEach(o=>p.push({t:'circle',cx:X(o.u),cy:Y(o.v),r:G.d/2,lw:.3}))});
+  if(cfg.vers>1){
+    const vb=[1,(cfg.ver>>1)&1,cfg.ver&1];
+    vb.forEach((b,i)=>{if(b)p.push({t:'rect',x:X(VER.x0+i*VER.cw),y:Y(FH-VER.cw/2),w:VER.cw,h:VER.cw,fill:1})});
+    T('VERSION '+(VLET[cfg.ver]||'A'),200,46.5,11,'right',true);
+  }
   const cells=[1,0,...cfgBits(cfg),0,1];
   cells.forEach((b,i)=>{if(b)p.push({t:'rect',x:X(CODE.x0+i*CODE.cw),y:Y(FH-CODE.cw/2),w:CODE.cw,h:CODE.cw,fill:1})});
   T('Shade one circle fully or mark it with an X  ·  Use a dark pencil or pen  ·  Keep the black squares clean',PG.w/2,275.5,7,'center');
@@ -344,13 +351,17 @@ function sheetSVG(cfg){
 }
 function sheetPDF(cfg){
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'letter'});
+  const pages=(cfg.vers>1)?[0,1]:[cfg.ver||0];
+  pages.forEach((v,pi)=>{
+  if(pi)doc.addPage();
   doc.setDrawColor(0);doc.setFillColor(0);doc.setTextColor(0);
-  for(const p of sheetPrims(cfg)){
+  for(const p of sheetPrims(Object.assign({},cfg,{ver:v}))){
     if(p.t==='rect'){doc.setLineWidth(p.lw||.3);doc.rect(p.x,p.y,p.w,p.h,p.fill?'F':'S')}
     else if(p.t==='circle'){doc.setLineWidth(p.lw);doc.circle(p.cx,p.cy,p.r,'S')}
     else if(p.t==='line'){doc.setLineWidth(p.lw);doc.line(p.x1,p.y1,p.x2,p.y2)}
     else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);doc.text(p.s,p.x,p.y,{align:p.align})}
   }
+  });
   return doc.output('arraybuffer');
 }
 
@@ -431,7 +442,16 @@ function readCode(G,H){
   const v=[];
   for(let i=0;i<CODE.n;i++){const u=CODE.x0+CODE.cw*(i+.5);let s=0;for(const dx of[-.7,0,.7])for(const dy of[-.7,0,.7])s+=sampleAt(G,H,u+dx,FH+dy);v.push(s/9)}
   const blk=(v[0]+v[33])/2,wht=(v[1]+v[32])/2;if(wht-blk<30)return null;
-  const thr=(blk+wht)/2;return bitsCfg(v.slice(2,32).map(x=>x<thr?1:0));
+  const thr=(blk+wht)/2;const cfg=bitsCfg(v.slice(2,32).map(x=>x<thr?1:0));
+  if(!cfg)return null;
+  cfg.ver=readVer(G,H,thr);return cfg;
+}
+/* Version block: cell 0 black = the sheet carries a version, then 2 bits. Older sheets have nothing there -> version A. */
+function readVer(G,H,thr){
+  const c=[];
+  for(let i=0;i<VER.n;i++){const u=VER.x0+VER.cw*(i+.5);let s=0;for(const dx of[-.7,0,.7])for(const dy of[-.7,0,.7])s+=sampleAt(G,H,u+dx,FH+dy);c.push(s/9<thr?1:0)}
+  if(!c[0])return 0;
+  return (c[1]<<1)|c[2];
 }
 function analyze(G){
   const f=Math.max(1,Math.ceil(Math.max(G.w,G.h)/800)),Sm=downsample(G,f);
@@ -484,10 +504,11 @@ function interpret(F){
   const ans=F.ans.map(row=>{const m=[];row.forEach((f,i)=>{if(f>=t)m.push(i)});return m});
   return {roll,ans};
 }
-const RS=3,RM=8;
+const RS=3,RM=8,RMT=50;
 function rectify(G,H){
-  const w=Math.round((FW+2*RM)*RS),h=Math.round((FH+2*RM)*RS),img=new ImageData(w,h),d=img.data;
-  for(let y=0;y<h;y++){const v=y/RS-RM;for(let x=0;x<w;x++){const s=sampleAt(G,H,x/RS-RM,v),k=(y*w+x)*4;d[k]=d[k+1]=d[k+2]=s;d[k+3]=255}}
+  // RMT reaches above the top corner squares so the printed NAME / SECTION / EXAM / DATE lines are in the picture.
+  const w=Math.round((FW+2*RM)*RS),h=Math.round((FH+RM+RMT)*RS),img=new ImageData(w,h),d=img.data;
+  for(let y=0;y<h;y++){const v=y/RS-RMT;for(let x=0;x<w;x++){const s=sampleAt(G,H,x/RS-RM,v),k=(y*w+x)*4;d[k]=d[k+1]=d[k+2]=s;d[k+3]=255}}
   return img;
 }
 
@@ -504,13 +525,22 @@ const UI={keyErr:null,listErr:null,listWarn:null,cur:null,view:'exam'};
 const fmt=n=>(Math.round(n*100)/100).toString();
 const rk=r=>String(r).padStart(S.cfg.roll,'0');
 const hasResults=()=>Object.keys(S.results).length>0;
-const keyCount=()=>S.key.filter((v,i)=>i<S.cfg.q&&v!=null&&v<S.cfg.opt).length;
-const keyComplete=()=>S.key.length>=S.cfg.q&&keyCount()===S.cfg.q;
+const versCount=()=>Math.max(1,Math.min(2,S.vers||1));
+const keyOf=v=>{if(v===1){S.keyB=S.keyB||[];return S.keyB}return S.key};
+const curVer=()=>versCount()>1?(UI.keyVer||0):0;
+const curKey=()=>keyOf(curVer());
+const keyCountOf=v=>keyOf(v).filter((x,i)=>i<S.cfg.q&&x!=null&&x<S.cfg.opt).length;
+const keyDoneOf=v=>keyOf(v).length>=S.cfg.q&&keyCountOf(v)===S.cfg.q;
+const keyCount=()=>keyCountOf(curVer());
+const keyComplete=()=>{for(let v=0;v<versCount();v++)if(!keyDoneOf(v))return false;return true};
 const detailsDone=()=>!!(S.exam.name.trim()&&S.exam.section.trim()&&S.exam.date);
 const maxScore=()=>S.cfg.q*S.cfg.mc;
 const layoutText=c=>`${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
 const sameLayout=(a,b)=>a.roll===b.roll&&a.q===b.q&&a.opt===b.opt;
-function fitKey(){const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=S.key[i];k[i]=v!=null&&v<S.cfg.opt?v:null}S.key=k}
+function fitKey(){
+  const fit=a=>{const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=(a||[])[i];k[i]=v!=null&&v<S.cfg.opt?v:null}return k};
+  S.key=fit(S.key);S.keyB=fit(S.keyB);
+}
 function listIssues(){
   const errs=[],seen={};
   S.students.forEach(s=>{
@@ -520,9 +550,9 @@ function listIssues(){
   return errs;
 }
 const studentMap=()=>{const m={};S.students.forEach(s=>{m[rk(s.roll)]=s});return m};
-function grade(ans){
-  const {mc,mi}=S.cfg;let c=0,w=0,b=0,m=0;
-  const items=ans.map((a,i)=>{if(!a.length){b++;return 'B'}if(a.length>1){m++;w++;return 'M'}if(a[0]===S.key[i]){c++;return 'C'}w++;return 'W'});
+function grade(ans,ver){
+  const {mc,mi}=S.cfg;const key=keyOf(ver||0);let c=0,w=0,b=0,m=0;
+  const items=ans.map((a,i)=>{if(!a.length){b++;return 'B'}if(a.length>1){m++;w++;return 'M'}if(a[0]===key[i]){c++;return 'C'}w++;return 'W'});
   return {c,w,b,m,items,score:Math.round((c*mc-w*mi)*100)/100};
 }
 function stepDone(i){return [S.sheetReady,keyComplete(),detailsDone(),S.students.length>0&&!listIssues().length,hasResults(),false][i]}
@@ -597,7 +627,7 @@ const ICON={
 /* ================= render ================= */
 function render(){
   try{paintSyncChip()}catch(e){}
-  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():classesView();persist();return}
+  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():UI.view==='bank'?itemBankView():classesView();persist();return}
   $('#stepper').hidden=false;syncClass();$('#ctx').innerHTML=ctxBar();
   if(S.step!==4)camClose();
   if(!canOpen(S.step)){let i=0;while(i<5&&stepDone(i))i++;S.step=Math.min(S.step,i)}
@@ -622,8 +652,9 @@ const VIEW={
   <div class="head">${eyebrow(0)}<h1>Set up the bubble sheet</h1><p class="lede">Pick the numbers for this quiz or exam. The preview updates as you go. Download the sheet, print it and give one to each student.</p></div>
   <div class="note"><p><b>Printed a sheet from before?</b> Scan it to reuse its settings. If its answers are shaded, they become the answer key.</p><button class="btn small" data-act="scanTemplate" ${hasResults()?'disabled':''}>${ICON.cam} Scan an old sheet</button></div>
   ${hasResults()?'<div class="alert warn">Roll digits, questions and choices are locked because scores are already saved. Start a <b>New exam</b> to change them.</div>':''}
-  <div class="setup"><div class="fields">${['roll','q','opt','mc','mi'].map(numField).join('')}</div>
-  <figure class="preview"><div class="paper" id="preview">${sheetSVG(S.cfg)}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
+  <div class="setup"><div class="fields">${['roll','q','opt','mc','mi'].map(numField).join('')}
+  <div class="field"><label>Test versions</label><div class="seg" role="group" aria-label="Test versions">${[[1,'One version'],[2,'Two: A and B']].map(([v,l])=>`<button class="seg-b ${versCount()===v?'on':''}" data-act="setVers" data-v="${v}">${l}</button>`).join('')}</div><p class="help">Two versions = two different answer keys. Each sheet is marked, and the app knows which is which.</p></div></div>
+  <figure class="preview"><div class="paper" id="preview">${sheetSVG(sheetCfg(0))}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${versCount()>1?' · the PDF has version A then version B':''}${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
   <div class="actions"><button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
 </section>`},
 1(){const n=keyCount(),q=S.cfg.q;
@@ -636,12 +667,12 @@ return `<section class="panel">
   </div>
   ${UI.keyErr?`<div class="alert bad"><b>This answer key doesn’t fit your bubble sheet.</b><ul>${UI.keyErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${UI.keyErr.length>8?`<li>…and ${UI.keyErr.length-8} more</li>`:''}</ul></div>`:''}
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
-    <span class="pill ${n===q?'ok':'warn'}">${n===q?'✓ Answer key complete':`${n} of ${q} answers set`}</span>
+    <span class="pill ${n===q?'ok':'warn'}">${n===q?'✓ Answer key complete'+(versCount()>1?' (version '+VLET[curVer()]+')':''):`${n} of ${q} answers set`}</span>
     <span class="pill">${layoutText(S.cfg)}</span>
     ${S.keyFrom?`<span class="pill acc">From ${esc(S.keyFrom)}</span>`:''}
     ${n?'<button class="btn small" data-act="clearKey" style="margin-left:auto">Clear answers</button>':''}
   </div>
-  ${keyGrid(S.key.slice(0,q).map(v=>v==null?[]:[v]),'setKey',true)}
+  ${verTabs()}${keyGrid(curKey().slice(0,q).map(v=>v==null?[]:[v]),'setKey',true)}
   <div class="actions"><button class="btn" data-act="go" data-i="0">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="2" ${keyComplete()?'':'disabled'}>Next: exam details ${ICON.arrow}</button></div>
 </section>`},
 2(){return `<section class="panel">
@@ -793,12 +824,12 @@ function bindScan(){camBind('',"student",S.cfg,onStudentCap)}
 /* ================= capture results ================= */
 function drawRect(canvas,cur,mode){
   const x=canvas.getContext('2d');x.putImageData(cur.base,0,0);const g=geo(cur.cfg),rad=g.d/2*RS+2;
-  const P=b=>[(b.u+RM)*RS,(b.v+RM)*RS];
+  const P=b=>[(b.u+RM)*RS,(b.v+RMT)*RS];
   const ring=(b,col,fill,dash)=>{const [px,py]=P(b);x.beginPath();x.arc(px,py,rad,0,Math.PI*2);x.setLineDash(dash?[4,3]:[]);x.lineWidth=3;x.strokeStyle=col;if(fill){x.fillStyle=fill;x.fill()}x.stroke();x.setLineDash([])};
   for(let d=0;d<cur.cfg.roll;d++){const ch=cur.roll[d];if(ch>='0'&&ch<='9')ring(g.roll[d][+ch],'#2152A3','rgba(33,82,163,.25)')}
   cur.ans.forEach((a,i)=>{
     if(mode!=='student'){a.forEach(o=>ring(g.ans[i].opts[o],a.length===1?'#2152A3':'#C98A12',a.length===1?'rgba(33,82,163,.25)':'rgba(201,138,18,.3)'));return}
-    const k=S.key[i];
+    const k=keyOf(cur.ver||0)[i];
     if(a.length===1&&a[0]===k)ring(g.ans[i].opts[k],'#1B9A5A','rgba(27,154,90,.3)');
     else{a.forEach(o=>ring(g.ans[i].opts[o],a.length>1?'#C98A12':'#D03B28',a.length>1?'rgba(201,138,18,.3)':'rgba(208,59,40,.3)'));if(k!=null)ring(g.ans[i].opts[k],'#1B9A5A',null,true)}
   });
@@ -812,10 +843,12 @@ function checkReasons(cur){
   const multi=cur.ans.map((a,i)=>a.length>1?i+1:0).filter(Boolean);
   if(multi.length)r.push(`question${multi.length>1?'s':''} ${multi.join(', ')} ha${multi.length>1?'ve':'s'} 2+ answers`);
   if(st&&S.results[cur.roll])r.push(`${st.name} already has a saved score`);
+  if(versCount()>1&&!keyDoneOf(cur.ver||0))r.push(`the version ${VLET[cur.ver||0]} answer key is not complete yet`);
   return r;
 }
 function onStudentCap(cap){
   UI.cur=Object.assign(cap,{editing:false});
+  UI.cur.ver=cap.ver||0;
   const reasons=checkReasons(UI.cur);
   if(S.autoSave&&!reasons.length){autoSaveCur(UI.cur);return}
   UI.cur.reasons=S.autoSave?reasons:[];
@@ -824,7 +857,7 @@ function onStudentCap(cap){
 }
 function autoSaveCur(cur){
   const st=studentMap()[cur.roll];
-  S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();savePic(cur);
+  S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now(),ver:cur.ver||0};persist();savePic(cur);
   cur.autoSaved=true;cur.savedRoll=cur.roll;
   beep('ok');buzz('ok');refreshSide();
   const box=$('#camBox');if(!box){toast(`Saved: ${st.name}`);camResume(cur.sig);return}
@@ -901,7 +934,10 @@ function scannerModal(title,lede,mode,expect,onCap){
 
 /* ================= results & analysis ================= */
 function stats(){
-  const rows=S.students.map(s=>{const r=S.results[rk(s.roll)];return {s,r,g:r?grade(r.ans):null}}),done=rows.filter(x=>x.g);
+  const only=UI.verView;
+  let rows=S.students.map(s=>{const r=S.results[rk(s.roll)];return {s,r,g:r?grade(r.ans,r.ver||0):null}});
+  if(only!=null&&versCount()>1)rows=rows.filter(x=>x.r&&(x.r.ver||0)===only);
+  const done=rows.filter(x=>x.g);
   const sc=done.map(x=>x.g.score).sort((a,b)=>a-b),n=sc.length;
   return {rows,done,n,mean:n?sc.reduce((a,b)=>a+b,0)/n:0,hi:n?sc[n-1]:0,lo:n?sc[0]:0,med:n?(n%2?sc[(n-1)/2]:(sc[n/2-1]+sc[n/2])/2):0};
 }
@@ -915,14 +951,14 @@ function itemStats(){
     const diff=p>=.76?'Very easy':p>=.61?'Easy':p>=.40?'Average':p>=.25?'Difficult':'Very difficult';
     const disc=D==null?'—':D>=.4?'Very good':D>=.3?'Good':D>=.2?'Fair':D>=0?'Poor':'Negative';
     const remark=D==null?'Need 5+ sheets':D<0?'Check the key':D>=.3&&p>=.25&&p<=.9?'Keep':D>=.2?'Improve':'Revise or replace';
-    const unused=cnt.map((c,o)=>c===0&&o!==S.key[i]?LET[o]:null).filter(Boolean);
+    const vkey=keyOf(UI.verView||0);const unused=cnt.map((c,o)=>c===0&&o!==vkey[i]?LET[o]:null).filter(Boolean);
     return {i,cnt,blank,multi,right,p,D,diff,disc,remark,unused,n};
   });
 }
 const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 function scoresTable(st){
-  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
-  ${st.rows.map((x,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>
+  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th>${versCount()>1?'<th class="c">Ver</th>':''}<th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
+  ${st.rows.map((x,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>${versCount()>1?`<td class="c">${x.r?VLET[x.r.ver||0]:''}</td>`:''}
   ${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td style="white-space:nowrap"><button class="btn small" data-act="viewPic" data-r="${esc(rk(x.s.roll))}">Sheet</button> <button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
   :`<td class="num dim">—</td><td></td><td></td><td></td><td></td><td><span class="pill">Not scanned</span></td><td></td>`}</tr>`).join('')}</tbody></table></div>`;
 }
@@ -931,7 +967,7 @@ function studentAnalysis(st,forReport){
   if(!st.done.length)return '<p class="dim">No scanned sheets yet.</p>';
   return `<div class="legend"><span class="cell-c">A = correct</span><span class="cell-w">B = wrong</span><span class="cell-m">* = 2+ answers</span><span class="cell-b">– = blank</span></div>
   <div class="tbl-wrap"><table><thead><tr><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th class="num">2+ ans.</th>${Array.from({length:q},(_,i)=>`<th class="c">Q${i+1}</th>`).join('')}</tr>
-  <tr><td colspan="8" class="dim" style="text-align:right">Answer key</td>${Array.from({length:q},(_,i)=>`<td class="c keycol">${LET[S.key[i]]??''}</td>`).join('')}</tr></thead><tbody>
+  <tr><td colspan="8" class="dim" style="text-align:right">Answer key${versCount()>1?' ('+VLET[UI.verView||0]+')':''}</td>${Array.from({length:q},(_,i)=>`<td class="c keycol">${LET[keyOf(UI.verView||0)[i]]??''}</td>`).join('')}</tr></thead><tbody>
   ${[...st.done].sort((a,b)=>b.g.score-a.g.score).map(x=>`<tr><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td><td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w-x.g.m}</td><td class="num">${x.g.b}</td><td class="num">${x.g.m}</td>
   ${x.g.items.map((t,i)=>{const a=x.r.ans[i]||[];return `<td class="c ${cls[t]}">${t==='B'?'–':t==='M'?'*':LET[a[0]]}</td>`}).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
@@ -940,13 +976,17 @@ function optionAnalysis(st){
   const it=itemStats();
   return `<p class="dim" style="margin:0 0 10px;font-size:.9rem;max-width:75ch"><b>Difficulty</b> is the share of students who got the item right. <b>Discrimination</b> checks if the top 27% of scorers got it right more often than the bottom 27% (needs at least 5 sheets). A negative value often means the answer key is wrong for that item. Green cells are the correct answer.</p>
   <div class="tbl-wrap"><table><thead><tr><th class="num">Q</th><th class="c">Key</th>${Array.from({length:S.cfg.opt},(_,o)=>`<th class="c">${LET[o]}</th>`).join('')}<th class="c">Blank</th><th class="c">2+ ans.</th><th class="num">Correct</th><th>Difficulty</th><th class="num">Disc.</th><th>Discrimination</th><th>Remark</th></tr></thead><tbody>
-  ${it.map(r=>`<tr><td class="num"><b>${r.i+1}</b></td><td class="c"><b>${LET[S.key[r.i]]}</b></td>${r.cnt.map((c,o)=>`<td class="c ${o===S.key[r.i]?'keycol':''} ${c===0&&o!==S.key[r.i]?'dim':''}">${c} <small class="dim">${pct(c,r.n)}</small></td>`).join('')}
+  ${it.map(r=>`<tr><td class="num"><b>${r.i+1}</b></td><td class="c"><b>${LET[keyOf(UI.verView||0)[r.i]]}</b></td>${r.cnt.map((c,o)=>`<td class="c ${o===keyOf(UI.verView||0)[r.i]?'keycol':''} ${c===0&&o!==keyOf(UI.verView||0)[r.i]?'dim':''}">${c} <small class="dim">${pct(c,r.n)}</small></td>`).join('')}
   <td class="c">${r.blank}</td><td class="c">${r.multi}</td><td class="num">${pct(r.right,r.n)}</td><td>${r.diff}</td><td class="num">${r.D==null?'—':r.D.toFixed(2)}</td><td>${r.disc}</td>
   <td><span class="pill ${r.remark==='Keep'?'ok':r.remark==='Improve'?'warn':r.remark.startsWith('Need')?'':'bad'}">${r.remark}</span>${r.unused.length?` <small class="dim">No one chose ${r.unused.join(', ')}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function resultsView(){
+  const multi=versCount()>1&&S.tab!=='scores';
+  UI.verView=null;
   const st=stats(),mx=fmt(maxScore());
-  const body=S.tab==='student'?studentAnalysis(st):S.tab==='option'?optionAnalysis(st):scoresTable(st);
+  if(multi){UI.verView=UI.verView==null?0:UI.verView;if(UI.verView==null)UI.verView=0}
+  const stv=multi?stats():st;
+  const body=(multi?verFilterBar():'')+(S.tab==='student'?studentAnalysis(stv):S.tab==='option'?optionAnalysis(stv):scoresTable(st));
   return `<section class="panel">
   <div class="head">${eyebrow(5)}<h1>Results: ${esc(S.exam.name)}</h1><p class="lede">${esc(S.exam.section)} · ${esc(S.exam.date)} · ${layoutText(S.cfg)} · +${fmt(S.cfg.mc)} correct${S.cfg.mi?`, −${fmt(S.cfg.mi)} wrong`:''}</p></div>
   <div class="tiles"><div class="tile"><small>Scanned</small><b>${st.n}<span> / ${S.students.length}</span></b></div><div class="tile"><small>Average</small><b>${st.n?fmt(st.mean):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Highest</small><b>${st.n?fmt(st.hi):'—'}<span> / ${mx}</span></b></div><div class="tile"><small>Lowest</small><b>${st.n?fmt(st.lo):'—'}<span> / ${mx}</span></b></div></div>
@@ -965,11 +1005,11 @@ function resultsView(){
   </section>`;
 }
 function excelBytes(){
-  const q=S.cfg.q,head=['ROLL NO','STUDENT NAME',((S.exam.name||'').trim()+' SCORE').trim().toUpperCase(),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
+  const q=S.cfg.q,V=versCount()>1,head=['ROLL NO','STUDENT NAME',((S.exam.name||'').trim()+' SCORE').trim().toUpperCase(),...(V?['VERSION']:[]),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
   const rows=S.students.map(s=>{const r=S.results[rk(s.roll)],roll=/^0/.test(s.roll)?s.roll:Number(s.roll);
-    if(!r)return [roll,s.name,'',...Array(q).fill('')];const g=grade(r.ans);return [roll,s.name,g.score,...g.items.map(t=>t==='C'?'OK':'X')]});
+    if(!r)return [roll,s.name,'',...(V?['']:[]),...Array(q).fill('')];const g=grade(r.ans,r.ver||0);return [roll,s.name,g.score,...(V?[VLET[r.ver||0]]:[]),...g.items.map(t=>t==='C'?'OK':'X')]});
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
-  ws['!cols']=[{wch:10},{wch:33.57},{wch:15},...Array(q).fill({wch:11.57})];
+  ws['!cols']=[{wch:10},{wch:33.57},{wch:15},...(V?[{wch:9}]:[]),...Array(q).fill({wch:11.57})];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'results');
   return XLSX.write(wb,{bookType:'xlsx',type:'array'});
 }
@@ -1010,21 +1050,21 @@ const ACT={
   spin:b=>{const id=b.dataset.f,v=clampCfg(id,(+S.cfg[id])+(+b.dataset.d)*FIELDS[id].step);$('#f-'+id).value=v;$('#e-'+id).hidden=true;setCfg(id,v)},
   next0:()=>{S.sheetReady=true;fitKey();S.step=1;render();window.scrollTo({top:0})},
   dlSheet:()=>{if(!window.jspdf){toast('The PDF tool didn’t load. Check your internet and reload.','bad');return}
-    saveFile(`bubble-sheet_${S.cfg.q}-items_${S.cfg.opt}-choices_${S.cfg.roll}-digit-roll.pdf`,sheetPDF(S.cfg),'application/pdf')},
+    saveFile(`bubble-sheet_${S.cfg.q}-items_${S.cfg.opt}-choices_${S.cfg.roll}-digit-roll${versCount()>1?'_A-B':''}.pdf`,sheetPDF(sheetCfg(0)),'application/pdf')},
   scanTemplate:()=>scannerModal('Scan an old bubble sheet','Hold the camera over a sheet printed from Bubble Tsek.','template',null,onTplCap),
   tplRescan:()=>{closeModal();ACT.scanTemplate()},
-  tplUse:()=>{const cap=UI.cur;closeModal();S.cfg={...cap.cfg};S.key=cap.ans.map(a=>a.length===1?a[0]:null);S.keyFrom=S.key.some(v=>v!=null)?'scanned sheet':'';UI.keyErr=null;S.sheetReady=true;
+  tplUse:()=>{const cap=UI.cur;closeModal();S.cfg={...cap.cfg};delete S.cfg.ver;delete S.cfg.vers;S.key=cap.ans.map(a=>a.length===1?a[0]:null);S.keyFrom=S.key.some(v=>v!=null)?'scanned sheet':'';UI.keyErr=null;S.sheetReady=true;
     if(keyComplete()){S.step=2;toast('Settings and answer key loaded from the sheet')}else{S.step=1;toast('Settings loaded from the sheet')}render()},
   pickKey:()=>$('#fileKey').click(),
   scanKey:()=>scannerModal('Scan the answer key','Shade the correct answers on one bubble sheet, then hold the camera over it.','key',S.cfg,onKeyCap),
   keyRescan:()=>{closeModal();ACT.scanKey()},
-  keyUse:()=>{const cap=UI.cur;closeModal();S.key=cap.ans.map(a=>a.length===1?a[0]:null);S.keyFrom='scanned sheet';UI.keyErr=null;render();toast(keyComplete()?'Answer key saved':'Answer key added. Fill in the empty ones.')},
-  dlKeyTpl:()=>saveFile(`answer-key_${S.cfg.q}-items.csv`,'QUESTION,ANSWER\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''}`).join('\r\n')+'\r\n','text/csv'),
-  setKey:b=>{const q=+b.dataset.q,o=+b.dataset.o;S.key[q]=S.key[q]===o?null:o;S.keyFrom=S.keyFrom||'typed in';
-    const row=b.closest('.krow');row.querySelectorAll('.bub').forEach((x,i)=>{const on=S.key[q]===i;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on)});row.classList.toggle('miss',S.key[q]==null);
+  keyUse:()=>{const cap=UI.cur;closeModal();const kv=versCount()>1?(cap.cfg&&cap.cfg.vers>1?(cap.cfg.ver||0):curVer()):0;UI.keyVer=kv;const nk=cap.ans.map(a=>a.length===1?a[0]:null);if(kv===1)S.keyB=nk;else S.key=nk;S.keyFrom='scanned sheet';UI.keyErr=null;render();toast(keyComplete()?'Answer key saved':'Answer key added. Fill in the empty ones.')},
+  dlKeyTpl:()=>saveFile(`answer-key_${S.cfg.q}-items.csv`,(versCount()>1?'QUESTION,A,B\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''},${keyOf(1)[i]!=null?LET[keyOf(1)[i]]:''}`).join('\r\n'):'QUESTION,ANSWER\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''}`).join('\r\n'))+'\r\n','text/csv'),
+  setKey:b=>{const q=+b.dataset.q,o=+b.dataset.o;const K=curKey();K[q]=K[q]===o?null:o;S.keyFrom=S.keyFrom||'typed in';
+    const row=b.closest('.krow');row.querySelectorAll('.bub').forEach((x,i)=>{const on=curKey()[q]===i;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on)});row.classList.toggle('miss',S.key[q]==null);
     persist();const n=keyCount(),pill=$('#main .pill');if(pill){pill.className='pill '+(n===S.cfg.q?'ok':'warn');pill.textContent=n===S.cfg.q?'✓ Answer key complete':`${n} of ${S.cfg.q} answers set`}
     const nx=$('#main .actions .btn.primary');if(nx)nx.disabled=!keyComplete();$('#stepper').innerHTML;renderStepperOnly()},
-  clearKey:()=>confirmBox('Clear the answer key?','All answers you set will be removed.',[{label:'Clear answers',cls:'danger',fn:()=>{S.key=Array(S.cfg.q).fill(null);S.keyFrom='';render()}}]),
+  clearKey:()=>confirmBox('Clear the answer key?','All answers you set will be removed.',[{label:'Clear answers',cls:'danger',fn:()=>{if(curVer()===1)S.keyB=Array(S.cfg.q).fill(null);else S.key=Array(S.cfg.q).fill(null);S.keyFrom='';render()}}]),
   pickList:()=>$('#fileList').click(),
   dlListEx:()=>saveFile('example classlist with roll number.csv','STUDENT NAME,ROLL NO\r\n"ABESIA, ALEXA JOHNNYHL FABIA",301\r\n"AGATON, JENILYN DE JESUS",302\r\n"AGUILOR, KIRLYN DAPILAGA",303\r\n"ALBALADEJO, ELIJAH JARED IGNACIO",304\r\n"ANDRES, JOHN RANDELLE VERANO",305\r\n','text/csv'),
   camStart:b=>{if(b&&b.dataset.p!=null&&b.dataset.p!==Cam.p)return;camStart()},
@@ -1044,7 +1084,7 @@ const ACT={
     b.closest('.krow').querySelectorAll('.bub').forEach((x,i)=>{x.classList.toggle('on',a.includes(i));x.setAttribute('aria-pressed',a.includes(i))});refreshRes()},
   resSave:()=>{const cur=UI.cur,st=studentMap()[cur.roll];if(!st)return;
     if(cur.autoSaved&&cur.savedRoll&&cur.savedRoll!==cur.roll){delete S.results[cur.savedRoll];picDel(cur.savedRoll)}
-    S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now()};persist();savePic(cur);
+    S.results[cur.roll]={roll:cur.roll,ans:cur.ans.map(a=>[...a]),at:Date.now(),ver:cur.ver||0};persist();savePic(cur);
     const g=grade(cur.ans);closeModal();toast(`Saved: ${st.name}, ${fmt(g.score)}/${fmt(maxScore())}`);
     const side=$('#scanSide');if(side)side.innerHTML=scanSide();renderStepperOnly();camResume(cur.sig)},
   tab:b=>{S.tab=b.dataset.t;persist();render();const t=$('.tabs');if(t)t.scrollIntoView({behavior:'smooth',block:'start'})},
@@ -1124,7 +1164,7 @@ const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const normKey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const rollKey=r=>String(r).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
 const GLOBAL_KEYS=['sens','autoSave','sound'];
-const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyFrom','exam','students','listName','results','tab'];
+const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB','vers','keyFrom','exam','students','listName','results','tab'];
 
 let LIB=null;
 function libLoad(){try{const t=localStorage.getItem(LIB_KEY);if(t)return JSON.parse(t)}catch(e){}return null}
@@ -1145,7 +1185,7 @@ function examSnapshot(){const d={};EXAM_KEYS.forEach(k=>d[k]=S[k]);return JSON.p
 function libSaveExam(){
   if(!LIB||!S.id)return;
   const rs=Object.values(S.results||{}),max=S.cfg.q*S.cfg.mc;
-  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,S.key).score,0)/rs.length:0;
+  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key)).score,0)/rs.length:0;
   const has=rs.length||S.exam.name.trim()||S.sheetReady;
   if(!has&&!LIB.exams[S.id])return;
   LIB.exams[S.id]={id:S.id,data:examSnapshot(),updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
@@ -1163,7 +1203,7 @@ function openExam(id){
   persist();
   const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);
   S=Object.assign(fresh(),JSON.parse(JSON.stringify(rec.data)),g);
-  if(!S.key||S.key.length!==S.cfg.q)fitKey();
+  if(!S.key||S.key.length!==S.cfg.q||(versCount()>1&&(!S.keyB||S.keyB.length!==S.cfg.q)))fitKey();
   UI.view='exam';UI.keyErr=UI.listErr=UI.listWarn=null;
   if(hasResults())S.step=5;
   render();window.scrollTo({top:0});
@@ -1262,6 +1302,8 @@ function classesView(){
     <button class="btn" data-act="addSubject">+ Add subject</button>
     <button class="btn" data-act="dlClassesEx">${ICON.dl} Example CSV</button>
     <button class="btn" data-act="syncOpen">Google Drive sync</button>
+    <button class="btn" data-act="bank">Item bank</button>
+    <button class="btn" data-act="backup">Backup &amp; restore</button>
   </div>`}
   ${groups.map(g=>`<h2 class="grp-h">${g.s?esc(g.s):'No subject'} <span class="dim" style="font-weight:400;font-size:.9rem">${g.list.length} class${g.list.length===1?'':'es'}</span></h2>
     ${g.list.length?`<div class="cls-grid">${g.list.map(c=>{const ex=examsOf(c.id);return `<button class="cls-card" data-act="openClass" data-id="${c.id}"><b>${esc(c.section)}</b><span>${c.students.length} student${c.students.length===1?'':'s'}</span><span>${ex.length} exam${ex.length===1?'':'s'}</span></button>`}).join('')}</div>`:`<p class="dim" style="margin:0 0 14px">No classes yet${past?'':' — upload a CSV or tap “New class”'}.</p>`}`).join('')}
@@ -1418,12 +1460,14 @@ async function chartsBytes(){
   s2.getColumn(14).width=14;s2.getColumn(15).width=12;head(s2,2,[,,,,,,,,,,,,,'Score range','Students']);
   labels.forEach((l,i)=>{s2.getRow(3+i).getCell(14).value=l;s2.getRow(3+i).getCell(15).value=cnt[i]});
   // Hardest questions
-  const it=itemStats().map(r=>({q:r.i+1,wrong:r.n?Math.round((1-r.right/r.n)*100):0,key:LET[S.key[r.i]]})).sort((a,b)=>b.wrong-a.wrong||a.q-b.q);
+  const itOf=v=>{const keep=UI.verView;UI.verView=versCount()>1?v:null;const rows=itemStats().map(r=>({q:r.i+1,ver:v,n:r.n,wrong:r.n?Math.round((1-r.right/r.n)*100):0,key:LET[keyOf(v)[r.i]]}));UI.verView=keep;return rows};
+  const it=(versCount()>1?[...itOf(0),...itOf(1)].filter(r=>r.n):itOf(0)).sort((a,b)=>b.wrong-a.wrong||a.q-b.q);
+  const qLabel=r=>versCount()>1?`${r.q} (${VLET[r.ver]})`:r.q;
   const top=it.slice(0,Math.min(15,it.length));
   const s3=wb.addWorksheet('Hardest questions');
-  addImg(s3,barChartH({title:'Hardest questions',sub:`${title} · % of students who got it wrong (top ${top.length})`,labels:top.map(r=>`Question ${r.q} (key ${r.key})`),values:top.map(r=>r.wrong),valueText:top.map(r=>r.wrong+'%'),maxValue:100}),900,84+36+30*top.length);
+  addImg(s3,barChartH({title:'Hardest questions',sub:`${title} · % of students who got it wrong (top ${top.length})`,labels:top.map(r=>`Question ${qLabel(r)} (key ${r.key})`),values:top.map(r=>r.wrong),valueText:top.map(r=>r.wrong+'%'),maxValue:100}),900,84+36+30*top.length);
   [14,15,16].forEach(ci=>s3.getColumn(ci).width=14);head(s3,2,[,,,,,,,,,,,,,'Question','Answer key','% wrong']);
-  it.forEach((r,i)=>{const row=s3.getRow(3+i);row.getCell(14).value=r.q;row.getCell(15).value=r.key;row.getCell(16).value=r.wrong});
+  it.forEach((r,i)=>{const row=s3.getRow(3+i);row.getCell(14).value=qLabel(r);row.getCell(15).value=r.key;row.getCell(16).value=r.wrong});
   // Class comparison: same exam name in this semester, other classes
   const s4=wb.addWorksheet('Class comparison');
   const nameK=normKey(S.exam.name);
@@ -1612,7 +1656,7 @@ function libSaveExam(){
   const has=rs.length||S.exam.name.trim()||S.sheetReady;
   if(!has&&!old)return;
   if(old&&sig(old.data)===sig(data)){old.data.step=data.step;old.data.tab=data.tab;LIB.curExam=S.id;try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){}return}
-  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,S.key).score,0)/rs.length:0;
+  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key)).score,0)/rs.length:0;
   LIB.exams[S.id]={id:S.id,data,updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
   LIB.curExam=S.id;libSave();
 }
@@ -1638,8 +1682,9 @@ function loadGIS(){
   return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.async=true;s.onload=()=>res();s.onerror=()=>rej(new Error('Could not reach Google. Check your internet connection.'));document.head.appendChild(s)});
 }
 /* Phase 3b: native Google sign-in in the Android app (DriveAuth plugin in MainActivity) */
-const DriveAuth=NATIVE?plug('DriveAuth'):null;
+const DriveAuth=NATIVE?(()=>{try{return plug('DriveAuth')}catch(e){return null}})():null;
 async function nativeToken(interactive){
+  if(!DriveAuth)throw new Error('This version of the phone app cannot sign in to Google yet. Install the newest APK.');
   let r;
   try{r=await DriveAuth.authorize({interactive:!!interactive})}
   catch(e){const code=String(e&&e.code||''),m=String(e&&e.message||e);
@@ -1749,7 +1794,7 @@ function buildLookupIndex(){
     const byRoll={};c.students.forEach(s=>{byRoll[String(s.roll).padStart(d.cfg.roll,'0')]=s});
     Object.values(d.results).forEach(r=>{const st=byRoll[r.roll];const k=x.id+'|'+rollKey(r.roll);
       out.push({term:t?t.name:'',subject:c.subject,section:c.section,exam:d.exam.name,date:d.exam.date,name:st?st.name:'',roll:r.roll,
-        score:gradeWith(r.ans,d.cfg,d.key).score,maxScore:d.cfg.q*d.cfg.mc,fileId:LIB.drivePics[k]?LIB.drivePics[k].id:null,updatedAt:r.at||x.updatedAt})})});
+        score:gradeWith(r.ans,d.cfg,((r.ver===1&&d.keyB&&d.keyB.length)?d.keyB:d.key)).score,maxScore:d.cfg.q*d.cfg.mc,fileId:LIB.drivePics[k]?LIB.drivePics[k].id:null,updatedAt:r.at||x.updatedAt})})});
   return {generatedAt:new Date().toISOString(),account:Sync.cfg.email,entries:out};
 }
 
@@ -1856,6 +1901,238 @@ Object.assign(ACT,{
 });
 ensureSyncFields();
 if(NATIVE&&Sync.cfg.email&&Sync.cfg.auto)setTimeout(()=>runSync(false),2500);
+
+/* ================= PHASE 4: versions A/B, item bank, backup & restore ================= */
+function sheetCfg(v){return Object.assign({},S.cfg,{vers:versCount(),ver:v||0})}
+function verTabs(){
+  if(versCount()<2)return '';
+  return `<div class="seg" style="max-width:340px;margin:0 0 14px" role="group" aria-label="Answer key version">${[0,1].map(v=>`<button class="${curVer()===v?'on':''}" data-act="keyVer" data-v="${v}">Version ${VLET[v]}${keyDoneOf(v)?' ✓':''}</button>`).join('')}</div>`;
+}
+function verFilterBar(){
+  if(versCount()<2)return '';
+  const cur=UI.verView||0,n=[0,1].map(v=>Object.values(S.results).filter(r=>(r.ver||0)===v).length);
+  return `<div class="seg" style="max-width:340px;margin:0 0 14px" role="group" aria-label="Show version">${[0,1].map(v=>`<button class="${cur===v?'on':''}" data-act="verView" data-v="${v}">Version ${VLET[v]} · ${n[v]} sheet${n[v]===1?'':'s'}</button>`).join('')}</div>`;
+}
+
+/* ---------- item bank: items most often missed, across exams ---------- */
+function examItemRows(rec){
+  const d=rec.data;if(!d||!d.results||!d.cfg||!d.key)return [];
+  const c=getClass(d.classId),t=termOf(d.termId),vers=Math.max(1,Math.min(2,d.vers||1));
+  const out=[];
+  for(let v=0;v<vers;v++){
+    const key=(v===1?d.keyB:d.key)||[];
+    const rs=Object.values(d.results).filter(r=>(r.ver||0)===v);
+    if(!rs.length||key.length<d.cfg.q)continue;
+    for(let i=0;i<d.cfg.q;i++){
+      let right=0,blank=0,multi=0;const cnt=Array(d.cfg.opt).fill(0);
+      rs.forEach(r=>{const a=(r.ans&&r.ans[i])||[];if(!a.length)blank++;else if(a.length>1)multi++;else{cnt[a[0]]++;if(a[0]===key[i])right++}});
+      const n=rs.length,wrong=n-right;
+      let worst=-1;cnt.forEach((x,o)=>{if(o!==key[i]&&(worst<0||x>cnt[worst]))worst=o});
+      out.push({examId:rec.id,exam:d.exam.name||'Untitled exam',date:d.exam.date||'',subject:c?c.subject:(d.exam.subject||''),section:c?c.section:(d.exam.section||''),
+        classId:d.classId,termId:d.termId,term:t?t.name:'',ver:v,vers,item:i+1,key:LET[key[i]],n,right,wrong,blank,multi,
+        pct:n?Math.round(wrong/n*100):0,worst:worst>=0&&cnt[worst]?LET[worst]+' ('+cnt[worst]+')':'—'});
+    }
+  }
+  return out;
+}
+function itemBankRows(){
+  const f=UI.bank||{};
+  let rows=[];
+  Object.values(LIB.exams).forEach(x=>{if(f.term&&x.data.termId!==f.term)return;rows=rows.concat(examItemRows(x))});
+  if(f.subject)rows=rows.filter(r=>r.subject===f.subject);
+  if(f.classId)rows=rows.filter(r=>r.classId===f.classId);
+  const min=f.min==null?5:f.min;
+  rows=rows.filter(r=>r.n>=min);
+  rows.sort((a,b)=>b.pct-a.pct||b.n-a.n||a.item-b.item);
+  return rows;
+}
+function itemBankView(){
+  const f=UI.bank=UI.bank||{term:LIB.curTerm,subject:'',classId:'',min:5,limit:50};
+  const rows=itemBankRows(),shown=rows.slice(0,f.limit||50);
+  const subjects=[...new Set(Object.values(LIB.exams).map(x=>{const c=getClass(x.data.classId);return c?c.subject:''}).filter(Boolean))];
+  const classes=classesOf(f.term||LIB.curTerm);
+  const hard=rows.filter(r=>r.pct>=50).length;
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="goClasses">My classes</a> › Item bank</p>
+    <h1>Item bank</h1><p class="lede">Every scanned item, hardest first. Use it to see what to reteach.</p></div>
+  <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="field"><label for="bkTerm">Semester</label><select class="txt" id="bkTerm" data-act="bankSet" data-k="term">${LIB.terms.map(t=>`<option value="${t.id}" ${f.term===t.id?'selected':''}>${esc(t.name)}${t.archived?' (past)':''}</option>`).join('')}<option value="" ${f.term?'':'selected'}>All semesters</option></select></div>
+    <div class="field"><label for="bkSubj">Subject</label><select class="txt" id="bkSubj" data-act="bankSet" data-k="subject"><option value="">All subjects</option>${subjects.map(s=>`<option value="${esc(s)}" ${f.subject===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+    <div class="field"><label for="bkCls">Class</label><select class="txt" id="bkCls" data-act="bankSet" data-k="classId"><option value="">All classes</option>${classes.map(c=>`<option value="${c.id}" ${f.classId===c.id?'selected':''}>${esc(c.section)}</option>`).join('')}</select></div>
+    <div class="field"><label for="bkMin">Least sheets scanned</label><select class="txt" id="bkMin" data-act="bankSet" data-k="min">${[1,5,10,20].map(m=>`<option value="${m}" ${(+f.min||5)===m?'selected':''}>${m}+</option>`).join('')}</select></div>
+  </div>
+  <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">
+    <div class="tile"><small>Items listed</small><b>${rows.length}</b></div>
+    <div class="tile"><small>Half the class missed</small><b>${hard}</b></div>
+    <div class="tile"><small>Exams included</small><b>${new Set(rows.map(r=>r.examId)).size}</b></div>
+  </div>
+  ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th class="num">Wrong</th><th>Exam</th><th>Section</th><th class="num">Item</th><th class="c">Key</th><th class="c">Most chosen wrong</th><th class="num">Sheets</th><th class="num">Blank</th><th>Open</th></tr></thead><tbody>
+  ${shown.map(r=>`<tr><td class="num"><b>${r.pct}%</b></td><td>${esc(r.exam)}${r.vers>1?` <span class="pill">${VLET[r.ver]}</span>`:''}<br><small class="dim">${esc(r.date)}${r.subject?' · '+esc(r.subject):''}</small></td><td>${esc(r.section)}</td><td class="num"><b>${r.item}</b></td><td class="c">${r.key||''}</td><td class="c">${esc(r.worst)}</td><td class="num">${r.n}</td><td class="num">${r.blank}</td><td><button class="btn small" data-act="bankOpen" data-id="${r.examId}" data-v="${r.ver}">Open exam</button></td></tr>`).join('')}
+  </tbody></table></div>
+  ${rows.length>shown.length?`<div class="actions"><button class="btn" data-act="bankMore">Show 50 more (${rows.length-shown.length} left)</button></div>`:''}`
+  :`<div class="card dim">No items yet with that many scanned sheets. Lower “Least sheets scanned”, or scan an exam first.</div>`}
+  <div class="actions"><button class="btn" data-act="goClasses">${ICON.back} My classes</button><button class="btn primary" data-act="bankExcel" ${rows.length?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Item bank (Excel)</button></div>
+  </section>`;
+}
+function bankExcelBytes(rows){
+  const head=['WRONG %','EXAM','VERSION','DATE','SUBJECT','SECTION','ITEM','ANSWER KEY','MOST CHOSEN WRONG','SHEETS','CORRECT','WRONG','BLANK','2+ ANSWERS'];
+  const body=rows.map(r=>[r.pct,r.exam,r.vers>1?VLET[r.ver]:'',r.date,r.subject,r.section,r.item,r.key||'',r.worst,r.n,r.right,r.wrong,r.blank,r.multi]);
+  const ws=XLSX.utils.aoa_to_sheet([head,...body]);
+  ws['!cols']=[{wch:9},{wch:20},{wch:9},{wch:12},{wch:24},{wch:12},{wch:7},{wch:11},{wch:19},{wch:8},{wch:9},{wch:8},{wch:8},{wch:12}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'item bank');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+
+/* ---------- backup & restore ---------- */
+const BK_VER=1;
+function crc32(buf){
+  if(!crc32.t){const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}crc32.t=t}
+  let c=0xFFFFFFFF;for(let i=0;i<buf.length;i++)c=(c>>>8)^crc32.t[(c^buf[i])&255];
+  return (c^0xFFFFFFFF)>>>0;
+}
+/* Minimal ZIP (stored, no compression) — JPEGs and JSON are fine uncompressed. */
+function zipBytes(files){
+  const enc=new TextEncoder(),parts=[],central=[];let off=0;
+  const u16=v=>[v&255,(v>>8)&255],u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  files.forEach(f=>{
+    const name=enc.encode(f.name),data=f.data,crc=crc32(data);
+    const lh=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0)]);
+    parts.push(lh,name,data);
+    central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(data.length),...u32(data.length),...u16(name.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)]),name);
+    off+=lh.length+name.length+data.length;
+  });
+  let clen=0;central.forEach(c=>clen+=c.length);
+  const eocd=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(clen),...u32(off),...u16(0)]);
+  let total=off+clen+eocd.length;const out=new Uint8Array(total);let p=0;
+  parts.forEach(x=>{out.set(x,p);p+=x.length});central.forEach(x=>{out.set(x,p);p+=x.length});out.set(eocd,p);
+  return out;
+}
+function unzip(bytes){
+  const b=new Uint8Array(bytes),dv=new DataView(b.buffer,b.byteOffset,b.byteLength),dec=new TextDecoder(),out={};
+  let i=0;
+  while(i+4<=b.length&&dv.getUint32(i,true)===0x04034b50){
+    const method=dv.getUint16(i+8,true),csize=dv.getUint32(i+18,true),nlen=dv.getUint16(i+26,true),elen=dv.getUint16(i+28,true);
+    const name=dec.decode(b.subarray(i+30,i+30+nlen)),start=i+30+nlen+elen;
+    if(method!==0)throw new Error('This backup file uses compression this app cannot read.');
+    out[name]=b.subarray(start,start+csize);
+    i=start+csize;
+  }
+  if(!Object.keys(out).length)throw new Error('This file is not a Bubble Tsek backup.');
+  return out;
+}
+function backupData(){
+  return {app:'bubbletsek',v:BK_VER,at:Date.now(),device:navigator.userAgent.slice(0,80),lib:LIB,active:examSnapshot(),activeId:S.id};
+}
+async function makeBackup(withPics){
+  const stamp=today();
+  const data=backupData();
+  if(!withPics){
+    const blob=new TextEncoder().encode(JSON.stringify(data));
+    await shareOrSave(`BubbleTsek-backup_${stamp}.json`,blob,'application/json','Bubble Tsek backup');
+    return {files:1};
+  }
+  const keys=await PicDB.keys('');
+  const files=[],map={};
+  for(let i=0;i<keys.length;i++){
+    const k=String(keys[i]);
+    const blob=await PicDB.get(k).catch(()=>null);
+    if(!blob)continue;
+    const nm='pics/'+String(i)+'.jpg';map[nm]=k;
+    files.push({name:nm,data:new Uint8Array(await blob.arrayBuffer())});
+  }
+  data.pics=map;
+  files.unshift({name:'data.json',data:new TextEncoder().encode(JSON.stringify(data))});
+  const zip=zipBytes(files);
+  await shareOrSave(`BubbleTsek-backup_${stamp}.zip`,zip,'application/zip','Bubble Tsek backup');
+  return {files:files.length-1,bytes:zip.length};
+}
+async function readBackupFile(file){
+  const buf=new Uint8Array(await file.arrayBuffer());
+  if(buf[0]===0x50&&buf[1]===0x4b){
+    const entries=unzip(buf);
+    const dj=entries['data.json'];
+    if(!dj)throw new Error('This zip has no Bubble Tsek data in it.');
+    const data=JSON.parse(new TextDecoder().decode(dj));
+    return {data,entries};
+  }
+  const data=JSON.parse(new TextDecoder().decode(buf));
+  return {data,entries:null};
+}
+async function restoreBackup(file,mode){
+  const {data,entries}=await readBackupFile(file);
+  if(!data||data.app!=='bubbletsek'||!data.lib)throw new Error('This file is not a Bubble Tsek backup.');
+  const rl=data.lib;
+  if(mode==='replace'){
+    LIB=rl;ensureSyncFields();
+    LIB.tomb={};LIB.known=knownIds();
+    if(data.active){const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);S=Object.assign(fresh(),data.active,g);}
+    libSave();
+  }else{
+    mergeLib(rl);
+    libSave();
+  }
+  let pics=0;
+  if(entries&&data.pics){
+    for(const nm of Object.keys(data.pics)){
+      const bytes=entries[nm];if(!bytes)continue;
+      const key=data.pics[nm];
+      if(mode!=='replace'&&(LIB.picMeta[key]||LIB.drivePics[key]))continue;
+      await PicDB.put(key,new Blob([bytes],{type:'image/jpeg'})).catch(()=>{});
+      LIB.picMeta[key]=LIB.picMeta[key]||Date.now();delete LIB.tomb['p:'+key];pics++;
+    }
+    libSave();
+  }
+  return {classes:LIB.classes.length,exams:Object.keys(LIB.exams).length,pics};
+}
+function backupPanel(){
+  const n=Object.keys(LIB.picMeta||{}).length;
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Backup</p><h2 style="margin:0">Backup &amp; restore</h2></div><button class="btn small" data-act="closeModal">Close</button></div>
+  <p class="dim" style="max-width:62ch">A backup file keeps your classes, exams, answer keys and scores — even if this phone is lost or the app is cleared. Save it to Google Drive or your computer.</p>
+  <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0"><div class="tile"><small>Classes</small><b style="font-size:1.05rem">${LIB.classes.length}</b></div><div class="tile"><small>Exams</small><b style="font-size:1.05rem">${Object.keys(LIB.exams).length}</b></div><div class="tile"><small>Pictures</small><b style="font-size:1.05rem">${n}</b></div></div>
+  <div class="card" style="margin-bottom:10px"><b>Save a backup</b><p class="help">Scores only is small and quick. With pictures can be very large (about ${Math.max(1,Math.round(n*0.12))} MB here).</p>
+    <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkSave" data-p="0">${NATIVE?ICON.share:ICON.dl} Scores only</button><button class="btn" data-act="bkSave" data-p="1" ${n?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Scores + pictures</button></div></div>
+  <div class="card"><b>Restore from a backup</b><p class="help">Pick a .json or .zip backup file. <b>Add</b> keeps what is on this device and fills in what is missing. <b>Replace</b> wipes this device first.</p>
+    <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkPick" data-m="merge">Restore (add)</button><button class="btn danger" data-act="bkPick" data-m="replace">Restore (replace everything)</button></div></div>`,{wide:true});
+}
+
+/* ---------- actions ---------- */
+Object.assign(ACT,{
+  setVers:b=>{const v=+b.dataset.v;S.vers=v;if(v>1){S.keyB=S.keyB||Array(S.cfg.q).fill(null)}UI.keyVer=0;persist();render()},
+  keyVer:b=>{UI.keyVer=+b.dataset.v;render()},
+  verView:b=>{UI.verView=+b.dataset.v;render()},
+  bank:()=>{UI.view='bank';render()},
+  bankSet:sel=>{const k=sel.dataset.k;UI.bank=UI.bank||{};UI.bank[k]=k==='min'?+sel.value:sel.value;render()},
+  bankMore:()=>{UI.bank.limit=(UI.bank.limit||50)+50;render()},
+  bankOpen:b=>{openExam(b.dataset.id);S.step=5;S.tab='option';UI.verView=+b.dataset.v;UI.view='exam';persist();render()},
+  bankExcel:()=>{const rows=itemBankRows();if(!rows.length)return;
+    const stamp=today();
+    shareOrSave(`BubbleTsek-item-bank_${stamp}.xlsx`,bankExcelBytes(rows),XLSX_MIME,'Item bank')},
+  backup:()=>backupPanel(),
+  bkSave:async b=>{const withPics=b.dataset.p==='1';
+    toast(withPics?'Making the backup… this can take a while.':'Making the backup…');
+    try{const r=await makeBackup(withPics);closeModal();toast(withPics?`Backup saved with ${r.files} pictures`:'Backup saved')}
+    catch(e){alertBox('Backup didn’t finish',[String(e&&e.message||e)])}},
+  bkPick:b=>{UI.bkMode=b.dataset.m;$('#fileBackup').value='';$('#fileBackup').click()},
+});
+(function(){
+  const inp=document.createElement('input');inp.type='file';inp.id='fileBackup';inp.hidden=true;
+  inp.accept=NATIVE?'':'.json,.zip,application/json,application/zip';
+  document.body.appendChild(inp);
+  inp.addEventListener('change',async e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    const mode=UI.bkMode||'merge';
+    const go=async()=>{
+      try{
+        toast('Restoring…');
+        const r=await restoreBackup(f,mode);
+        closeModal();syncClass();render();
+        alertBox('Restore finished',[`${r.classes} classes, ${r.exams} exams${r.pics?`, ${r.pics} pictures`:''} are on this device now.`],'ok');
+      }catch(err){alertBox('That file could not be restored',[String(err&&err.message||err)])}
+    };
+    if(mode==='replace')confirmBox('Replace everything on this device?','Your classes, exams and scores here will be deleted and replaced by the backup. This cannot be undone.',[{label:'Replace everything',cls:'danger',fn:go}]);
+    else go();
+  });
+})();
 
 
 if(S.key.length!==S.cfg.q)fitKey();
