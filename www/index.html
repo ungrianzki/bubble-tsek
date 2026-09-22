@@ -244,6 +244,59 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
+/* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
+   Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
+const OLD_MM=0.199086;
+const OLD20=(()=>{
+  const ox=114.5,oy=294.5,m=v=>Math.round(v*OLD_MM*1000)/1000,pt=(x,y)=>({u:m(x-ox),v:m(y-oy)});
+  const roll=[0,1,2].map(d=>Array.from({length:10},(_,r)=>pt(190+30*d,354+30*r)));
+  const rows=[];for(let i=1;i<=20;i++)rows.push(i<=6?[190,744+30*(i-1)]:i<=10?[430,324+30*(i-7)]:i<=15?[430,474+30*(i-11)]:[430,654+30*(i-16)]);
+  const ans=rows.map(([x,y])=>({x:m(x-ox),v:m(y-oy),opts:[0,1,2,3,4].map(o=>pt(x+30*o,y))}));
+  const marks=[];for(let r=0;r<5;r++)for(let c=0;c<3;c++)marks.push(Object.assign(pt(114.5+240*c,294.5+150*r),{corner:(r===0||r===4)&&(c===0||c===2)}));
+  return {FW:m(480),FH:m(600),RMT:63,d:4.2,cd:m(22),mk:m(20),px:m,pt,roll,ans,marks,
+    head:{x0:m(99.5-ox),x1:m(609.5-ox),ys:[49.5,94.5,139.5,184.5,229.5].map(y=>m(y-oy))},
+    labelRows:[[430,295],[430,445],[430,625],[190,715]],
+    page:{x:60.1,y:97.8},cfg:{roll:3,q:20,opt:5}};
+})();
+const isOld=c=>!!(c&&c.tpl==='old20');
+const tplDims=c=>isOld(c)?{FW:OLD20.FW,FH:OLD20.FH,RMT:OLD20.RMT}:{FW,FH,RMT};
+function oldGeo(){return {s:1,hx:1,vy:1,d:OLD20.d,x0:0,roll:OLD20.roll,ans:OLD20.ans,groups:[]}}
+function oldPrims(){
+  const p=[],O=OLD20,X=u=>O.page.x+u,Y=v=>O.page.y+v,m=O.px;
+  const T=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
+  const hx0=X(O.head.x0),hx1=X(O.head.x1),hy=O.head.ys.map(Y);
+  p.push({t:'rect',x:hx0,y:hy[0],w:hx1-hx0,h:hy[4]-hy[0],lw:.35});
+  [1,2,3].forEach(i=>p.push({t:'line',x1:hx0,y1:hy[i],x2:hx1,y2:hy[i],lw:.3}));
+  ['NAME :','SECTION :','EXAM :','DATE :'].forEach((s,i)=>T(s,hx0+2,hy[i]+6.4,14));
+  T('LASTNAME',X(m(203-114.5)),hy[0]-1.6,8.5,'center');T('FIRSTNAME',X(m(292-114.5)),hy[0]-1.6,8.5,'center');T('MI',X(m(388-114.5)),hy[0]-1.6,8.5,'center');
+  O.marks.forEach(k=>p.push({t:'rect',x:X(k.u)-O.mk/2,y:Y(k.v)-O.mk/2,w:O.mk,h:O.mk,fill:1}));
+  const c0=O.roll[0][0],cr=O.cd/2;
+  T('Roll No',X(m(236-114.5)),Y(m(295-294.5))+1.5,11,'center');
+  for(let d=0;d<3;d++)p.push({t:'rect',x:X(O.roll[d][0].u)-cr-.3,y:Y(m(324-294.5))-cr-.3,w:O.cd+.6,h:O.cd+.6,lw:.3});
+  for(let r=0;r<10;r++){T(String(r),X(c0.u)-5.4,Y(O.roll[0][r].v)+1.6,12,'right');for(let d=0;d<3;d++)p.push({t:'circle',cx:X(O.roll[d][r].u),cy:Y(O.roll[d][r].v),r:cr,lw:.35})}
+  T('Answer Starts Here',X(m(233-114.5)),Y(m(654-294.5))+1.5,11,'center');T('only shade 1 answer',X(m(233-114.5)),Y(m(684-294.5))+1.5,11,'center');
+  O.labelRows.forEach(([x,y])=>{for(let o=0;o<5;o++)T('ABCDE'[o],X(m(x+30*o-114.5)),Y(m(y-294.5))+1.5,11,'center')});
+  O.ans.forEach((a,i)=>{T(String(i+1),X(a.x)-5.2,Y(a.v)+1.6,12,'right');a.opts.forEach(b=>p.push({t:'circle',cx:X(b.u),cy:Y(b.v),r:cr,lw:.35}))});
+  T('Original sheet · 3-digit roll · 20 items · A–E',PG.w/2,275.5,7,'center');
+  return p;
+}
+/* Is this the original sheet? The 11 inner squares must be where they belong; then count how many bubble outlines line up
+   (this also picks the right way up, because the grid of squares looks the same upside down). */
+function oldScore(G,H){
+  const avg=(u,v,r)=>{let s=0,n=0;for(const dx of[-r,0,r])for(const dy of[-r,0,r]){s+=sampleAt(G,H,u+dx,v+dy);n++}return s/n};
+  let ok=0;
+  for(const k of OLD20.marks){if(k.corner)continue;
+    const c=avg(k.u,k.v,.8);let w=0;for(let a=0;a<8;a++){const t=a*Math.PI/4;w=Math.max(w,sampleAt(G,H,k.u+Math.cos(t)*3.6,k.v+Math.sin(t)*3.6))}
+    if(c<w*0.55)ok++}
+  if(ok<9)return 0;
+  let n=0;const R=OLD20.cd/2-.15;
+  const all=OLD20.roll.flat().concat(OLD20.ans.flatMap(a=>a.opts));
+  for(const b of all){let ring=0,out=0;for(let a=0;a<12;a++){const t=a*Math.PI/6;ring+=sampleAt(G,H,b.u+Math.cos(t)*R,b.v+Math.sin(t)*R);out=Math.max(out,sampleAt(G,H,b.u+Math.cos(t)*(R+1.1),b.v+Math.sin(t)*(R+1.1)))}
+    const cen=sampleAt(G,H,b.u,b.v);if(ring/12<out*0.85||cen<out*0.6)n++}
+  return 1+n;
+}
+function oldCfg(){const c=S&&S.cfg||{};return {roll:3,q:20,opt:5,mc:c.mc||1,mi:c.mi||0,tpl:'old20',ver:0}}
+
 const SMAX=1.8, VSTRETCH=1.5, HSTRETCH=1.4, GH=33.8, RB=77, GAP=1.2;
 const MARK_MIN={1:0.16,2:0.25,3:0.38};
 const FIELDS={
@@ -296,6 +349,7 @@ function plan(cfg){
   return _plan[id]=best;
 }
 function geo(cfg){
+  if(isOld(cfg))return oldGeo();
   const id=cfg.roll+'-'+cfg.q+'-'+cfg.opt;if(_geo[id])return _geo[id];
   const P=plan(cfg),{s,f,fh,C,cw,dist}=P,vy=s*f,hx=s*fh;
   const xOf=c=>{const n=c===0?Math.max(cfg.opt,cfg.roll):cfg.opt,w=(10.5+(n-1)*6)*hx+3.2*s;return AV.u0+c*cw+(cw-w)/2};
@@ -312,6 +366,7 @@ function geo(cfg){
   return _geo[id]={s,hx,vy,d:4.4*s,x0,roll,ans,groups};
 }
 function sheetPrims(cfg){
+  if(isOld(cfg))return oldPrims();
   const G=geo(cfg),p=[],X=u=>FR.L+u,Y=v=>FR.T+v,s=G.s,hx=G.hx,vy=G.vy,fs=Math.min(11,8*s);
   const T=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
   T('LASTNAME',66,7.3,7,'center');T('FIRSTNAME',122,7.3,7,'center');T('MI',180,7.3,7,'center');
@@ -439,17 +494,32 @@ function sampleAt(G,H,u,v){
   return (g[i]*(1-fx)+g[i+1]*fx)*(1-fy)+(g[i+G.w]*(1-fx)+g[i+G.w+1]*fx)*fy;
 }
 function readCode(G,H){
-  const v=[];
-  for(let i=0;i<CODE.n;i++){const u=CODE.x0+CODE.cw*(i+.5);let s=0;for(const dx of[-.7,0,.7])for(const dy of[-.7,0,.7])s+=sampleAt(G,H,u+dx,FH+dy);v.push(s/9)}
+  // Cells are compared with the paper just above and below them (shadow-proof), and the strip is searched a few mm around
+  // where it should be, because a corner square in shadow or blur can shift the frame slightly. Guards + CRC decide.
+  const avg=(u,v)=>{let s=0;for(const dx of[-.6,0,.6])for(const dy of[-.6,0,.6])s+=sampleAt(G,H,u+dx,v+dy);return s/9};
+  const at=(du,dv)=>{const r=[];for(let i=0;i<CODE.n;i++){const u=CODE.x0+CODE.cw*(i+.5)+du,v=FH+dv;
+      const w=Math.max(avg(u,v-CODE.cw*1.15),avg(u,v+CODE.cw*1.15));r.push(avg(u,v)/Math.max(1,w))}
+    let m=0;r.forEach(x=>m+=Math.min(.3,Math.abs(x-.62)));return {du,dv,L:r.map(x=>x<.62?1:0),m:m/r.length-.002*(Math.abs(du)+Math.abs(dv))}};
+  const tries=[];
+  for(let du=-2.4;du<=2.41;du+=.4)for(let dv=-1.2;dv<=1.21;dv+=.6)tries.push(at(du,dv));
+  tries.sort((a,b)=>b.m-a.m);
+  for(const t of tries.slice(0,4)){
+    const L=t.L;if(!(L[0]&&!L[1]&&!L[32]&&L[33]))continue;
+    const cfg=bitsCfg(L.slice(2,32));if(!cfg)continue;
+    cfg.ver=readVer(G,H,t.du,t.dv);return cfg;
+  }
+  // older method as a last try
+  const v=[];for(let i=0;i<CODE.n;i++)v.push(avg(CODE.x0+CODE.cw*(i+.5),FH));
   const blk=(v[0]+v[33])/2,wht=(v[1]+v[32])/2;if(wht-blk<30)return null;
-  const thr=(blk+wht)/2;const cfg=bitsCfg(v.slice(2,32).map(x=>x<thr?1:0));
-  if(!cfg)return null;
-  cfg.ver=readVer(G,H,thr);return cfg;
+  const thr=(blk+wht)/2,cfg=bitsCfg(v.slice(2,32).map(x=>x<thr?1:0));
+  if(!cfg)return null;cfg.ver=readVer(G,H,0,0);return cfg;
 }
 /* Version block: cell 0 black = the sheet carries a version, then 2 bits. Older sheets have nothing there -> version A. */
-function readVer(G,H,thr){
+function readVer(G,H,du,dv){
+  du=du||0;dv=dv||0;
+  const avg=(u,v)=>{let s=0;for(const dx of[-.6,0,.6])for(const dy of[-.6,0,.6])s+=sampleAt(G,H,u+dx,v+dy);return s/9};
   const c=[];
-  for(let i=0;i<VER.n;i++){const u=VER.x0+VER.cw*(i+.5);let s=0;for(const dx of[-.7,0,.7])for(const dy of[-.7,0,.7])s+=sampleAt(G,H,u+dx,FH+dy);c.push(s/9<thr?1:0)}
+  for(let i=0;i<VER.n;i++){const u=VER.x0+VER.cw*(i+.5)+du,v=FH+dv;const wht=Math.max(avg(u,v-VER.cw*1.15),avg(u,v+VER.cw*1.15));c.push(avg(u,v)<wht*0.62?1:0)}
   if(!c[0])return 0;
   return (c[1]<<1)|c[2];
 }
@@ -465,21 +535,35 @@ function camFrame(v){
   return {r:analyze(G),G};
 }
 function locate(G,quads,f){
-  const box=[[0,0],[FW,0],[FW,FH],[0,FH]];
+  const box=[[0,0],[FW,0],[FW,FH],[0,FH]],boxO=[[0,0],[OLD20.FW,0],[OLD20.FW,OLD20.FH],[0,OLD20.FH]];
+  let old=null;
   for(const q of quads){
     const P=q.map(p=>({x:(p.x+.5)*f-.5,y:(p.y+.5)*f-.5}));
     for(const pts of [P,[P[2],P[3],P[0],P[1]]]){
       const H=homography(box,pts);if(!H)continue;
       const cfg=readCode(G,H);if(cfg)return {ok:true,H,corners:pts,cfg,pxmm:dist(pts[0],pts[1])/FW};
+      const Ho=homography(boxO,pts);if(!Ho)continue;
+      const sc=oldScore(G,Ho);if(sc&&(!old||sc>old.sc))old={H:Ho,corners:pts,sc};
     }
   }
+  if(old)return {ok:true,H:old.H,corners:old.corners,cfg:oldCfg(),pxmm:dist(old.corners[0],old.corners[1])/OLD20.FW};
   return {ok:false,reason:'code'};
 }
 function bubbleFill(G,H,u,v,BD){
-  const ring=[];for(let a=0;a<16;a++){const t=a*Math.PI/8;ring.push(sampleAt(G,H,u+Math.cos(t)*(BD/2+.6),v+Math.sin(t)*(BD/2+.6)))}
-  ring.sort((a,b)=>a-b);const white=ring[11],thr=white*0.68,r=BD*0.34/3;
-  let n=0,dk=0;for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){if(i*i+j*j>10)continue;n++;if(sampleAt(G,H,u+i*r,v+j*r)<thr)dk++}
-  return white<40?0:dk/n;
+  // Paper brightness is sampled on a ring just outside the circle. Each point inside is compared with the ring points on its own side,
+  // so a shadow edge running through a bubble doesn't make the shaded half look filled.
+  const R=BD/2+.6,ring=[];for(let a=0;a<16;a++){const t=a*Math.PI/8;ring.push(sampleAt(G,H,u+Math.cos(t)*R,v+Math.sin(t)*R))}
+  const sorted=[...ring].sort((a,b)=>a-b),white=sorted[11],r=BD*0.34/3;
+  if(white<40)return 0;
+  let n=0,dk=0;
+  for(let j=-3;j<=3;j++)for(let i=-3;i<=3;i++){
+    if(i*i+j*j>10)continue;n++;
+    let w=white;
+    if(i||j){const k=((Math.round(Math.atan2(j,i)/(Math.PI/8))%16)+16)%16;w=Math.max(ring[k],ring[(k+1)%16],ring[(k+15)%16],white*0.4);w=Math.min(w,white)}
+    else w=sorted[8];
+    if(sampleAt(G,H,u+i*r,v+j*r)<w*0.68)dk++;
+  }
+  return dk/n;
 }
 // How crisp the picture is: thin circle outlines fade quickly when the camera shakes or is out of focus.
 function sharpness(G,H,cfg){
@@ -505,9 +589,9 @@ function interpret(F){
   return {roll,ans};
 }
 const RS=3,RM=8,RMT=50;
-function rectify(G,H){
+function rectify(G,H,cfg){
   // RMT reaches above the top corner squares so the printed NAME / SECTION / EXAM / DATE lines are in the picture.
-  const w=Math.round((FW+2*RM)*RS),h=Math.round((FH+RM+RMT)*RS),img=new ImageData(w,h),d=img.data;
+  const D=tplDims(cfg),w=Math.round((D.FW+2*RM)*RS),h=Math.round((D.FH+RM+D.RMT)*RS),img=new ImageData(w,h),d=img.data,RMT=D.RMT;
   for(let y=0;y<h;y++){const v=y/RS-RMT;for(let x=0;x<w;x++){const s=sampleAt(G,H,x/RS-RM,v),k=(y*w+x)*4;d[k]=d[k+1]=d[k+2]=s;d[k+3]=255}}
   return img;
 }
@@ -535,7 +619,7 @@ const keyCount=()=>keyCountOf(curVer());
 const keyComplete=()=>{for(let v=0;v<versCount();v++)if(!keyDoneOf(v))return false;return true};
 const detailsDone=()=>!!(S.exam.name.trim()&&S.exam.section.trim()&&S.exam.date);
 const maxScore=()=>S.cfg.q*S.cfg.mc;
-const layoutText=c=>`${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
+const layoutText=c=>`${c&&c.tpl==='old20'?'original sheet: ':''}${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
 const sameLayout=(a,b)=>a.roll===b.roll&&a.q===b.q&&a.opt===b.opt;
 function fitKey(){
   const fit=a=>{const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=(a||[])[i];k[i]=v!=null&&v<S.cfg.opt?v:null}return k};
@@ -652,8 +736,8 @@ const VIEW={
   <div class="head">${eyebrow(0)}<h1>Set up the bubble sheet</h1><p class="lede">Pick the numbers for this quiz or exam. The preview updates as you go. Download the sheet, print it and give one to each student.</p></div>
   <div class="note"><p><b>Printed a sheet from before?</b> Scan it to reuse its settings. If its answers are shaded, they become the answer key.</p><button class="btn small" data-act="scanTemplate" ${hasResults()?'disabled':''}>${ICON.cam} Scan an old sheet</button></div>
   ${hasResults()?'<div class="alert warn">Roll digits, questions and choices are locked because scores are already saved. Start a <b>New exam</b> to change them.</div>':''}
-  <div class="setup"><div class="fields">${['roll','q','opt','mc','mi'].map(numField).join('')}
-  <div class="field"><label>Test versions</label><div class="seg" role="group" aria-label="Test versions">${[[1,'One version'],[2,'Two: A and B']].map(([v,l])=>`<button class="seg-b ${versCount()===v?'on':''}" data-act="setVers" data-v="${v}">${l}</button>`).join('')}</div><p class="help">Two versions = two different answer keys. Each sheet is marked, and the app knows which is which.</p></div></div>
+  <div class="setup"><div class="fields">${sheetTypeField()}${(isOld(S.cfg)?['mc','mi']:['roll','q','opt','mc','mi']).map(numField).join('')}
+  ${isOld(S.cfg)?'':`<div class="field"><label>Test versions</label><div class="seg" role="group" aria-label="Test versions">${[[1,'One version'],[2,'Two: A and B']].map(([v,l])=>`<button class="seg-b ${versCount()===v?'on':''}" data-act="setVers" data-v="${v}">${l}</button>`).join('')}</div><p class="help">Two versions = two different answer keys. Each sheet is marked, and the app knows which is which.</p></div>`}</div>
   <figure class="preview"><div class="paper" id="preview">${sheetSVG(sheetCfg(0))}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${versCount()>1?' · the PDF has version A then version B':''}${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
   <div class="actions"><button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
 </section>`},
@@ -782,7 +866,7 @@ function drawOverlay(r,G){
 function handle(r,G,single){
   if(!r.ok){
     Cam.hist=[];Cam.sawEmpty=true;Cam.best=0;
-    const m=r.reason==='markers'?'Looking for the sheet… Make sure all 4 corner squares are in view.':'I see the squares, but can’t read the sheet. Hold steady and avoid shadows or glare.';
+    const m=r.reason==='markers'?'Looking for the sheet… Make sure all 4 corner squares are in view.':'I see the squares, but can’t read the sheet. Keep your hand and phone’s shadow off the paper (especially the corners and the bottom strip), and avoid glare.';
     if(single)alertBox('Couldn’t read this photo',[r.reason==='markers'?'The four black corner squares were not found. Take the photo from straight above with the whole sheet in view.':'The sheet was found but the code strip at the bottom could not be read. Retake the photo in brighter, even light.']);
     else status(m,'');return;
   }
@@ -810,7 +894,7 @@ function capture(r,G,fills,sig){
   const rd=interpret(fills);sig=sig||rd.roll+'|'+rd.ans.map(a=>a.join('')).join(',');
   Cam.paused=true;Cam.hist=[];if(Cam.mode!=='student'){beep('ok');buzz('ok')}
   status('Sheet scanned.','ok');
-  Cam.onCap({cfg:r.cfg,roll:rd.roll,ans:rd.ans,base:rectify(G,r.H),sig});
+  Cam.onCap({cfg:r.cfg,roll:rd.roll,ans:rd.ans,base:rectify(G,r.H,r.cfg),sig});
 }
 function camResume(sig){Cam.lastSig=sig;Cam.sawEmpty=false;Cam.paused=false;Cam.lastMsg='';if(Cam.running)status('Put the next sheet in view.','')}
 function photoPicked(file){
@@ -824,7 +908,7 @@ function bindScan(){camBind('',"student",S.cfg,onStudentCap)}
 /* ================= capture results ================= */
 function drawRect(canvas,cur,mode){
   const x=canvas.getContext('2d');x.putImageData(cur.base,0,0);const g=geo(cur.cfg),rad=g.d/2*RS+2;
-  const P=b=>[(b.u+RM)*RS,(b.v+RMT)*RS];
+  const TD=tplDims(cur.cfg),P=b=>[(b.u+RM)*RS,(b.v+TD.RMT)*RS];
   const ring=(b,col,fill,dash)=>{const [px,py]=P(b);x.beginPath();x.arc(px,py,rad,0,Math.PI*2);x.setLineDash(dash?[4,3]:[]);x.lineWidth=3;x.strokeStyle=col;if(fill){x.fillStyle=fill;x.fill()}x.stroke();x.setLineDash([])};
   for(let d=0;d<cur.cfg.roll;d++){const ch=cur.roll[d];if(ch>='0'&&ch<='9')ring(g.roll[d][+ch],'#2152A3','rgba(33,82,163,.25)')}
   cur.ans.forEach((a,i)=>{
@@ -2095,9 +2179,22 @@ function backupPanel(){
     <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkPick" data-m="merge">Restore (add)</button><button class="btn danger" data-act="bkPick" data-m="replace">Restore (replace everything)</button></div></div>`,{wide:true});
 }
 
+
+/* ---------- sheet type: Bubble Tsek sheet or the original 20-item sheet ---------- */
+function sheetTypeField(){
+  const old=isOld(S.cfg),locked=hasResults();
+  return `<div class="field" style="grid-column:1/-1"><label>Bubble sheet</label><div class="seg" role="group" aria-label="Bubble sheet type">${[['bt','Bubble Tsek sheet'],['old20','Original sheet (20 items, A–E)']].map(([t,l])=>`<button class="${(old?'old20':'bt')===t?'on':''}" data-act="setTpl" data-t="${t}" ${locked?'disabled':''}>${l}</button>`).join('')}</div>
+  <p class="help">${old?'Your pre-printed sheet: 3-digit roll number, 20 items, choices A–E. Use the copies you already have, or print more from here.':'Printed from this app. Any number of items and choices.'}${locked?' Can’t change after sheets are scanned.':''}</p></div>`;
+}
+Object.assign(ACT,{
+  setTpl:b=>{if(hasResults())return;const t=b.dataset.t;
+    if(t==='old20'){S.cfg=Object.assign({},S.cfg,OLD20.cfg,{tpl:'old20'});S.vers=1}
+    else{S.cfg=Object.assign({},S.cfg);delete S.cfg.tpl}
+    fitKey();persist();render()}
+});
 /* ---------- actions ---------- */
 Object.assign(ACT,{
-  setVers:b=>{const v=+b.dataset.v;S.vers=v;if(v>1){S.keyB=S.keyB||Array(S.cfg.q).fill(null)}UI.keyVer=0;persist();render()},
+  setVers:b=>{if(isOld(S.cfg))return;const v=+b.dataset.v;S.vers=v;if(v>1){S.keyB=S.keyB||Array(S.cfg.q).fill(null)}UI.keyVer=0;persist();render()},
   keyVer:b=>{UI.keyVer=+b.dataset.v;render()},
   verView:b=>{UI.verView=+b.dataset.v;render()},
   bank:()=>{UI.view='bank';render()},
