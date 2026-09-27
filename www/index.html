@@ -211,6 +211,7 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 .tgl i{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .15s}
 .tgl.on{background:var(--ok)}.tgl.on i{left:25px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.qtext{font-weight:400;font-size:.78rem;text-align:left;max-width:260px;white-space:normal;color:var(--ink-2,#445);margin-top:2px;line-height:1.25}.qtext small{display:block;color:var(--muted,#778)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
 <body>
@@ -221,7 +222,7 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
       <div class="logo" aria-hidden="true"><i></i><i class="f"></i><i></i><i class="f"></i><i></i><i></i></div>
       <div><b>Bubble Tsek</b><small>Bubble sheet checker for teachers</small></div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="sync-chip idle" id="syncChip" data-act="syncChip" hidden></button><button class="btn small" data-act="goClasses" id="btnClasses">My classes</button><button class="btn small" data-act="newExam" id="btnNew">New exam</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><button class="sync-chip idle" id="syncChip" data-act="syncChip" hidden></button><button class="btn small" data-act="goBanks" id="btnBanks">Question banks</button><button class="btn small" data-act="goClasses" id="btnClasses">My classes</button><button class="btn small" data-act="newExam" id="btnNew">New exam</button></div>
   </header>
   <div id="ctx"></div>
   <nav class="stepper" id="stepper" aria-label="Steps"></nav>
@@ -246,56 +247,93 @@ const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip 
 const VLET='AB';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
-const OLD_MM=0.199086;
-const OLD20=(()=>{
-  const ox=114.5,oy=294.5,m=v=>Math.round(v*OLD_MM*1000)/1000,pt=(x,y)=>({u:m(x-ox),v:m(y-oy)});
-  const roll=[0,1,2].map(d=>Array.from({length:10},(_,r)=>pt(190+30*d,354+30*r)));
-  const rows=[];for(let i=1;i<=20;i++)rows.push(i<=6?[190,744+30*(i-1)]:i<=10?[430,324+30*(i-7)]:i<=15?[430,474+30*(i-11)]:[430,654+30*(i-16)]);
-  const ans=rows.map(([x,y])=>({x:m(x-ox),v:m(y-oy),opts:[0,1,2,3,4].map(o=>pt(x+30*o,y))}));
-  const marks=[];for(let r=0;r<5;r++)for(let c=0;c<3;c++)marks.push(Object.assign(pt(114.5+240*c,294.5+150*r),{corner:(r===0||r===4)&&(c===0||c===2)}));
-  return {FW:m(480),FH:m(600),RMT:63,d:4.2,cd:m(22),mk:m(20),px:m,pt,roll,ans,marks,
-    head:{x0:m(99.5-ox),x1:m(609.5-ox),ys:[49.5,94.5,139.5,184.5,229.5].map(y=>m(y-oy))},
-    labelRows:[[430,295],[430,445],[430,625],[190,715]],
-    page:{x:60.1,y:97.8},cfg:{roll:3,q:20,opt:5}};
+/* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
+   - 20 items  (3×5 squares, 0.199086 mm/px in "answer sheet 20.pdf")
+   - 50 / 60 items (4×7 squares, 0.15987 mm/px in "answer sheet 50 and 60.pdf") — same sheet, the 50 just stops at item 50.
+   Coordinates below are mm from the centre of the top-left square. ===== */
+function schBuild(o){
+  const m=v=>Math.round(v*o.mm*1000)/1000,pt=(x,y)=>({u:m(x-o.ox),v:m(y-o.oy)});
+  const roll=o.rollX.map(x=>o.rollY.map(y=>pt(x,y)));
+  const ans=o.rows.map(([x,y])=>({x:m(x-o.ox),v:m(y-o.oy),opts:[0,1,2,3,4].map(i=>pt(x+30*i,y))}));
+  const marks=[];o.cols.forEach((x,ci)=>o.mrows.forEach((y,ri)=>marks.push(Object.assign(pt(x,y),{corner:(ci===0||ci===o.cols.length-1)&&(ri===0||ri===o.mrows.length-1)}))));
+  return {id:o.id,name:o.name,FW:m(o.cols[o.cols.length-1]-o.cols[0]),FH:m(o.mrows[o.mrows.length-1]-o.mrows[0]),RMT:o.rmt,d:m(22)*0.96,cd:m(22),mk:m(20),px:m,pt,roll,ans,marks,
+    head:{x0:m(o.head.x0-o.ox),x1:m(o.head.x1-o.ox),ys:o.head.ys.map(y=>m(y-o.oy))},
+    labelRows:o.labelRows,rollBoxY:m(o.rollBoxY-o.oy),page:o.page,cfg:{roll:3,q:o.rows.length,opt:5},extra:o.extra||[]};
+}
+const SCH_ROWS_20=(()=>{const r=[];for(let i=1;i<=20;i++)r.push(i<=6?[190,744+30*(i-1)]:i<=10?[430,324+30*(i-7)]:i<=15?[430,474+30*(i-11)]:[430,654+30*(i-16)]);return r})();
+const SCH_ROWS_60=(()=>{
+  const c1=[744,774,804,834,864,924,954,984,1014,1044,1104,1134,1164,1194];
+  const c2=[324,354,384,414,444,474,534,564,594,624,654,714,744,774,804,834,894,924,954,984,1014,1074,1104,1134,1164,1194];
+  const c3=[324,354,384,414,444,504,534,564,594,624,684,714,744,774,804,864,894,924,954,984];
+  return c1.map(y=>[190,y]).concat(c2.map(y=>[430,y]),c3.map(y=>[670,y]));
 })();
-const isOld=c=>!!(c&&c.tpl==='old20');
-const tplDims=c=>isOld(c)?{FW:OLD20.FW,FH:OLD20.FH,RMT:OLD20.RMT}:{FW,FH,RMT};
-function oldGeo(){return {s:1,hx:1,vy:1,d:OLD20.d,x0:0,roll:OLD20.roll,ans:OLD20.ans,groups:[]}}
-function oldPrims(){
-  const p=[],O=OLD20,X=u=>O.page.x+u,Y=v=>O.page.y+v,m=O.px;
-  const T=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
-  const hx0=X(O.head.x0),hx1=X(O.head.x1),hy=O.head.ys.map(Y);
+const OLD20=schBuild({id:'old20',name:'School sheet · 20 items',mm:0.199086,ox:114.5,oy:294.5,cols:[114.5,354.5,594.5],mrows:[294.5,444.5,594.5,744.5,894.5],
+  rollX:[190,220,250],rollY:[354,384,414,444,474,504,534,564,594,624],rollBoxY:324,rows:SCH_ROWS_20,rmt:63,
+  head:{x0:99.5,x1:609.5,ys:[49.5,94.5,139.5,184.5,229.5]},labelRows:[[430,295],[430,445],[430,625],[190,715]],page:{x:60.1,y:97.8},
+  extra:[{t:'text',s:'Answer Starts Here',x:233,y:654,size:11,align:'center'},{t:'text',s:'only shade 1 answer',x:233,y:684,size:11,align:'center'}]});
+const SCH60=schBuild({id:'sch60',name:'School sheet · 60 items',mm:0.159874,ox:114.5,oy:294.5,cols:[114.5,354.5,594.5,834.5],mrows:[294.5,444.5,594.5,744.5,894.5,1044.5,1194.5],
+  rollX:[190,220,250],rollY:[354,384,414,444,474,504,534,564,594,624],rollBoxY:324,rows:SCH_ROWS_60,rmt:52,
+  head:{x0:99.5,x1:849.5,ys:[49.5,94.5,139.5,184.5,229.5]},
+  labelRows:[[190,714],[190,894],[190,1074],[430,294],[430,504],[430,684],[430,864],[430,1044],[670,294],[670,474],[670,654],[670,834]],
+  page:{x:50.4,y:76.6},
+  extra:[{t:'text',s:'',x:220,y:654,size:10,align:'center',exam:true},{t:'text',s:'',x:220,y:684,size:10,align:'center',section:true}]});
+const SCH50=schBuild(Object.assign({},{id:'sch50',name:'School sheet · 50 items',mm:0.159874,ox:114.5,oy:294.5,cols:[114.5,354.5,594.5,834.5],mrows:[294.5,444.5,594.5,744.5,894.5,1044.5,1194.5],
+  rollX:[190,220,250],rollY:[354,384,414,444,474,504,534,564,594,624],rollBoxY:324,rows:SCH_ROWS_60.slice(0,50),rmt:52,
+  head:{x0:99.5,x1:849.5,ys:[49.5,94.5,139.5,184.5,229.5]},
+  labelRows:[[190,714],[190,894],[190,1074],[430,294],[430,504],[430,684],[430,864],[430,1044],[670,294],[670,474]],
+  page:{x:50.4,y:76.6},
+  extra:[{t:'text',s:'',x:220,y:654,size:10,align:'center',exam:true},{t:'text',s:'',x:220,y:684,size:10,align:'center',section:true}]}));
+const TPLS={old20:OLD20,sch50:SCH50,sch60:SCH60};
+const SCH_LIST=[OLD20,SCH50,SCH60];
+const isOld=c=>!!(c&&TPLS[c.tpl]);
+const tplOf=c=>TPLS[(c||{}).tpl]||null;
+const tplDims=c=>{const T=tplOf(c);return T?{FW:T.FW,FH:T.FH,RMT:T.RMT}:{FW,FH,RMT}};
+function oldGeo(cfg){const T=tplOf(cfg)||OLD20;return {s:1,hx:1,vy:1,d:T.d,x0:0,roll:T.roll,ans:T.ans,groups:[]}}
+function oldPrims(cfg){
+  const T=tplOf(cfg)||OLD20,p=[],X=u=>T.page.x+u,Y=v=>T.page.y+v,m=T.px,ox=114.5,oy=294.5;
+  const T2=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
+  const hx0=X(T.head.x0),hx1=X(T.head.x1),hy=T.head.ys.map(Y);
   p.push({t:'rect',x:hx0,y:hy[0],w:hx1-hx0,h:hy[4]-hy[0],lw:.35});
   [1,2,3].forEach(i=>p.push({t:'line',x1:hx0,y1:hy[i],x2:hx1,y2:hy[i],lw:.3}));
-  ['NAME :','SECTION :','EXAM :','DATE :'].forEach((s,i)=>T(s,hx0+2,hy[i]+6.4,14));
-  T('LASTNAME',X(m(203-114.5)),hy[0]-1.6,8.5,'center');T('FIRSTNAME',X(m(292-114.5)),hy[0]-1.6,8.5,'center');T('MI',X(m(388-114.5)),hy[0]-1.6,8.5,'center');
-  O.marks.forEach(k=>p.push({t:'rect',x:X(k.u)-O.mk/2,y:Y(k.v)-O.mk/2,w:O.mk,h:O.mk,fill:1}));
-  const c0=O.roll[0][0],cr=O.cd/2;
-  T('Roll No',X(m(236-114.5)),Y(m(295-294.5))+1.5,11,'center');
-  for(let d=0;d<3;d++)p.push({t:'rect',x:X(O.roll[d][0].u)-cr-.3,y:Y(m(324-294.5))-cr-.3,w:O.cd+.6,h:O.cd+.6,lw:.3});
-  for(let r=0;r<10;r++){T(String(r),X(c0.u)-5.4,Y(O.roll[0][r].v)+1.6,12,'right');for(let d=0;d<3;d++)p.push({t:'circle',cx:X(O.roll[d][r].u),cy:Y(O.roll[d][r].v),r:cr,lw:.35})}
-  T('Answer Starts Here',X(m(233-114.5)),Y(m(654-294.5))+1.5,11,'center');T('only shade 1 answer',X(m(233-114.5)),Y(m(684-294.5))+1.5,11,'center');
-  O.labelRows.forEach(([x,y])=>{for(let o=0;o<5;o++)T('ABCDE'[o],X(m(x+30*o-114.5)),Y(m(y-294.5))+1.5,11,'center')});
-  O.ans.forEach((a,i)=>{T(String(i+1),X(a.x)-5.2,Y(a.v)+1.6,12,'right');a.opts.forEach(b=>p.push({t:'circle',cx:X(b.u),cy:Y(b.v),r:cr,lw:.35}))});
-  T('Original sheet · 3-digit roll · 20 items · A–E',PG.w/2,275.5,7,'center');
+  ['NAME :','SECTION :','EXAM :','DATE :'].forEach((s,i)=>T2(s,hx0+2,hy[i]+6.4,14));
+  const lw=hx1-hx0;
+  T2('LASTNAME',hx0+lw*0.32,hy[0]-1.6,8.5,'center');T2('FIRSTNAME',hx0+lw*0.63,hy[0]-1.6,8.5,'center');T2('MI',hx0+lw*0.91,hy[0]-1.6,8.5,'center');
+  T.marks.forEach(k=>p.push({t:'rect',x:X(k.u)-T.mk/2,y:Y(k.v)-T.mk/2,w:T.mk,h:T.mk,fill:1}));
+  const c0=T.roll[0][0],cr=T.cd/2;
+  T2('Roll No',X(m(236-ox)),Y(T.rollBoxY)-cr-1.6,11,'center');
+  for(let d=0;d<T.roll.length;d++)p.push({t:'rect',x:X(T.roll[d][0].u)-cr-.3,y:Y(T.rollBoxY)-cr-.3,w:T.cd+.6,h:T.cd+.6,lw:.3});
+  for(let r=0;r<10;r++){T2(String(r),X(c0.u)-cr-1.4,Y(T.roll[0][r].v)+1.6,12,'right');for(let d=0;d<T.roll.length;d++)p.push({t:'circle',cx:X(T.roll[d][r].u),cy:Y(T.roll[d][r].v),r:cr,lw:.35})}
+  (T.extra||[]).forEach(e=>{const s=e.exam?String(S.exam.name||''):e.section?String(S.exam.section||''):e.s;if(s)T2(s,X(m(e.x-ox)),Y(m(e.y-oy))+1.5,e.size,e.align)});
+  (T.labelRows||[]).forEach(([x,y])=>{for(let o=0;o<5;o++)T2('ABCDE'[o],X(m(x+30*o-ox)),Y(m(y-oy))+1.5,11,'center')});
+  T.ans.forEach((a,i)=>{T2(String(i+1),X(a.x)-cr-1.4,Y(a.v)+1.6,12,'right');a.opts.forEach(b=>p.push({t:'circle',cx:X(b.u),cy:Y(b.v),r:cr,lw:.35}))});
+  T2(T.name+' · 3-digit roll · A–E',PG.w/2,275.5,7,'center');
   return p;
 }
-/* Is this the original sheet? The 11 inner squares must be where they belong; then count how many bubble outlines line up
-   (this also picks the right way up, because the grid of squares looks the same upside down). */
-function oldScore(G,H){
+/* Is this one of the school sheets? The inner squares must be where they belong, then bubble outlines are counted
+   (that also picks the right way up, because the grid of squares looks the same upside down). */
+function oldScore(G,H,T){
+  T=T||OLD20;
   const avg=(u,v,r)=>{let s=0,n=0;for(const dx of[-r,0,r])for(const dy of[-r,0,r]){s+=sampleAt(G,H,u+dx,v+dy);n++}return s/n};
-  let ok=0;
-  for(const k of OLD20.marks){if(k.corner)continue;
-    const c=avg(k.u,k.v,.8);let w=0;for(let a=0;a<8;a++){const t=a*Math.PI/4;w=Math.max(w,sampleAt(G,H,k.u+Math.cos(t)*3.6,k.v+Math.sin(t)*3.6))}
-    if(c<w*0.55)ok++}
-  if(ok<9)return 0;
-  let n=0;const R=OLD20.cd/2-.15;
-  const all=OLD20.roll.flat().concat(OLD20.ans.flatMap(a=>a.opts));
-  for(const b of all){let ring=0,out=0;for(let a=0;a<12;a++){const t=a*Math.PI/6;ring+=sampleAt(G,H,b.u+Math.cos(t)*R,b.v+Math.sin(t)*R);out=Math.max(out,sampleAt(G,H,b.u+Math.cos(t)*(R+1.1),b.v+Math.sin(t)*(R+1.1)))}
-    const cen=sampleAt(G,H,b.u,b.v);if(ring/12<out*0.85||cen<out*0.6)n++}
-  return 1+n;
+  const ring=(u,v,R)=>{let x=0;for(let a=0;a<8;a++){const t=a*Math.PI/4;x=Math.max(x,sampleAt(G,H,u+Math.cos(t)*R,v+Math.sin(t)*R))}return x};
+  let ok=0,inner=0;
+  for(const k of T.marks){if(k.corner)continue;inner++;if(avg(k.u,k.v,T.mk*0.2)<ring(k.u,k.v,T.mk*0.95)*0.55)ok++}
+  if(ok<Math.ceil(inner*0.8))return 0;
+  return 1+bubblesFound(G,H,T.roll.flat().concat(T.ans.flatMap(a=>a.opts)),T.cd/2-.12);
 }
-function oldCfg(){const c=S&&S.cfg||{};return {roll:3,q:20,opt:5,mc:c.mc||1,mi:c.mi||0,tpl:'old20',ver:0}}
+function bubblesFound(G,H,list,R){
+  let n=0;
+  for(const b of list){let ring=0,out=0;for(let a=0;a<12;a++){const t=a*Math.PI/6;ring+=sampleAt(G,H,b.u+Math.cos(t)*R,b.v+Math.sin(t)*R);out=Math.max(out,sampleAt(G,H,b.u+Math.cos(t)*(R+R*0.5),b.v+Math.sin(t)*(R+R*0.5)))}
+    const cen=sampleAt(G,H,b.u,b.v);if(ring/12<out*0.85||cen<out*0.6)n++}
+  return n;
+}
+/* 50 and 60 are the same sheet: decide by looking for bubbles at items 51–60 */
+function schVariant(G,H){
+  const tail=SCH_ROWS_60.slice(50).map(([x,y])=>SCH60.pt(x,y)),opts=[];
+  tail.forEach(b=>{for(let i=0;i<5;i++)opts.push({u:b.u+SCH60.px(30*i),v:b.v})});
+  return bubblesFound(G,H,opts,SCH60.cd/2-.12)>=opts.length*0.6?SCH60:SCH50;
+}
+function oldCfg(T){const c=S&&S.cfg||{};return {roll:3,q:T.cfg.q,opt:5,mc:c.mc||1,mi:c.mi||0,tpl:T.id,ver:0}}
+
 
 const SMAX=1.8, VSTRETCH=1.5, HSTRETCH=1.4, GH=33.8, RB=77, GAP=1.2;
 const MARK_MIN={1:0.16,2:0.25,3:0.38};
@@ -349,7 +387,7 @@ function plan(cfg){
   return _plan[id]=best;
 }
 function geo(cfg){
-  if(isOld(cfg))return oldGeo();
+  if(isOld(cfg))return oldGeo(cfg);
   const id=cfg.roll+'-'+cfg.q+'-'+cfg.opt;if(_geo[id])return _geo[id];
   const P=plan(cfg),{s,f,fh,C,cw,dist}=P,vy=s*f,hx=s*fh;
   const xOf=c=>{const n=c===0?Math.max(cfg.opt,cfg.roll):cfg.opt,w=(10.5+(n-1)*6)*hx+3.2*s;return AV.u0+c*cw+(cw-w)/2};
@@ -366,7 +404,7 @@ function geo(cfg){
   return _geo[id]={s,hx,vy,d:4.4*s,x0,roll,ans,groups};
 }
 function sheetPrims(cfg){
-  if(isOld(cfg))return oldPrims();
+  if(isOld(cfg))return oldPrims(cfg);
   const G=geo(cfg),p=[],X=u=>FR.L+u,Y=v=>FR.T+v,s=G.s,hx=G.hx,vy=G.vy,fs=Math.min(11,8*s);
   const T=(str,x,y,size,align='left',bold=false)=>p.push({t:'text',s:str,x,y,size,align,bold});
   T('LASTNAME',66,7.3,7,'center');T('FIRSTNAME',122,7.3,7,'center');T('MI',180,7.3,7,'center');
@@ -535,18 +573,21 @@ function camFrame(v){
   return {r:analyze(G),G};
 }
 function locate(G,quads,f){
-  const box=[[0,0],[FW,0],[FW,FH],[0,FH]],boxO=[[0,0],[OLD20.FW,0],[OLD20.FW,OLD20.FH],[0,OLD20.FH]];
+  const box=[[0,0],[FW,0],[FW,FH],[0,FH]];
   let old=null;
   for(const q of quads){
     const P=q.map(p=>({x:(p.x+.5)*f-.5,y:(p.y+.5)*f-.5}));
     for(const pts of [P,[P[2],P[3],P[0],P[1]]]){
       const H=homography(box,pts);if(!H)continue;
       const cfg=readCode(G,H);if(cfg)return {ok:true,H,corners:pts,cfg,pxmm:dist(pts[0],pts[1])/FW};
-      const Ho=homography(boxO,pts);if(!Ho)continue;
-      const sc=oldScore(G,Ho);if(sc&&(!old||sc>old.sc))old={H:Ho,corners:pts,sc};
+      for(const T of [OLD20,SCH60]){
+        const Ho=homography([[0,0],[T.FW,0],[T.FW,T.FH],[0,T.FH]],pts);if(!Ho)continue;
+        const sc=oldScore(G,Ho,T);if(sc&&(!old||sc>old.sc))old={H:Ho,corners:pts,sc,T};
+      }
     }
   }
-  if(old)return {ok:true,H:old.H,corners:old.corners,cfg:oldCfg(),pxmm:dist(old.corners[0],old.corners[1])/OLD20.FW};
+  if(old){const T=old.T===SCH60?schVariant(G,old.H):old.T;
+    return {ok:true,H:old.H,corners:old.corners,cfg:oldCfg(T),pxmm:dist(old.corners[0],old.corners[1])/T.FW}}
   return {ok:false,reason:'code'};
 }
 function bubbleFill(G,H,u,v,BD){
@@ -619,7 +660,7 @@ const keyCount=()=>keyCountOf(curVer());
 const keyComplete=()=>{for(let v=0;v<versCount();v++)if(!keyDoneOf(v))return false;return true};
 const detailsDone=()=>!!(S.exam.name.trim()&&S.exam.section.trim()&&S.exam.date);
 const maxScore=()=>S.cfg.q*S.cfg.mc;
-const layoutText=c=>`${c&&c.tpl==='old20'?'original sheet: ':''}${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
+const layoutText=c=>`${c&&TPLS[c.tpl]?'school sheet: ':''}${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
 const sameLayout=(a,b)=>a.roll===b.roll&&a.q===b.q&&a.opt===b.opt;
 function fitKey(){
   const fit=a=>{const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=(a||[])[i];k[i]=v!=null&&v<S.cfg.opt?v:null}return k};
@@ -711,7 +752,7 @@ const ICON={
 /* ================= render ================= */
 function render(){
   try{paintSyncChip()}catch(e){}
-  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():UI.view==='bank'?itemBankView():classesView();persist();return}
+  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():UI.view==='bank'?itemBankView():UI.view==='qbanks'?banksView():UI.view==='qbank'?bankView():UI.view==='maketest'?makeTestView():classesView();persist();return}
   $('#stepper').hidden=false;syncClass();$('#ctx').innerHTML=ctxBar();
   if(S.step!==4)camClose();
   if(!canOpen(S.step)){let i=0;while(i<5&&stepDone(i))i++;S.step=Math.min(S.step,i)}
@@ -739,7 +780,7 @@ const VIEW={
   <div class="setup"><div class="fields">${sheetTypeField()}${(isOld(S.cfg)?['mc','mi']:['roll','q','opt','mc','mi']).map(numField).join('')}
   ${isOld(S.cfg)?'':`<div class="field"><label>Test versions</label><div class="seg" role="group" aria-label="Test versions">${[[1,'One version'],[2,'Two: A and B']].map(([v,l])=>`<button class="seg-b ${versCount()===v?'on':''}" data-act="setVers" data-v="${v}">${l}</button>`).join('')}</div><p class="help">Two versions = two different answer keys. Each sheet is marked, and the app knows which is which.</p></div>`}</div>
   <figure class="preview"><div class="paper" id="preview">${sheetSVG(sheetCfg(0))}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${versCount()>1?' · the PDF has version A then version B':''}${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
-  <div class="actions"><button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
+  <div class="actions">${S.test&&!NATIVE?'<button class="btn" data-act="testKit">Test kit</button>':''}<button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
 </section>`},
 1(){const n=keyCount(),q=S.cfg.q;
 return `<section class="panel">
@@ -748,6 +789,8 @@ return `<section class="panel">
     <button class="btn" data-act="pickKey">${ICON.up} Upload CSV file</button>
     <button class="btn" data-act="scanKey">${ICON.cam} Scan shaded answer sheet</button>
     <button class="btn" data-act="dlKeyTpl">${ICON.dl} Download CSV template</button>
+    <button class="btn" data-act="dlKeySheet" ${keyComplete()?'':'disabled'} title="Answer key printed as a shaded bubble sheet">${ICON.dl} Answer key sheet (shaded, PDF)</button>
+    ${S.test&&!NATIVE?`<button class="btn primary" data-act="testKit">Test kit: paper, keys, quiz game</button>`:''}
   </div>
   ${UI.keyErr?`<div class="alert bad"><b>This answer key doesn’t fit your bubble sheet.</b><ul>${UI.keyErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${UI.keyErr.length>8?`<li>…and ${UI.keyErr.length-8} more</li>`:''}</ul></div>`:''}
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
@@ -756,7 +799,7 @@ return `<section class="panel">
     ${S.keyFrom?`<span class="pill acc">From ${esc(S.keyFrom)}</span>`:''}
     ${n?'<button class="btn small" data-act="clearKey" style="margin-left:auto">Clear answers</button>':''}
   </div>
-  ${verTabs()}${keyGrid(curKey().slice(0,q).map(v=>v==null?[]:[v]),'setKey',true)}
+  ${S.test?`<div class="alert" style="margin-bottom:10px">This answer key comes from the question bank test <b>${esc(S.test.title)}</b>${versCount()>1?' (both versions)':''}. To change it, make a new test from the bank.</div>`:''}${verTabs()}${keyGrid(curKey().slice(0,q).map(v=>v==null?[]:[v]),'setKey',true)}
   <div class="actions"><button class="btn" data-act="go" data-i="0">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="2" ${keyComplete()?'':'disabled'}>Next: exam details ${ICON.arrow}</button></div>
 </section>`},
 2(){return `<section class="panel">
@@ -1060,7 +1103,7 @@ function optionAnalysis(st){
   const it=itemStats();
   return `<p class="dim" style="margin:0 0 10px;font-size:.9rem;max-width:75ch"><b>Difficulty</b> is the share of students who got the item right. <b>Discrimination</b> checks if the top 27% of scorers got it right more often than the bottom 27% (needs at least 5 sheets). A negative value often means the answer key is wrong for that item. Green cells are the correct answer.</p>
   <div class="tbl-wrap"><table><thead><tr><th class="num">Q</th><th class="c">Key</th>${Array.from({length:S.cfg.opt},(_,o)=>`<th class="c">${LET[o]}</th>`).join('')}<th class="c">Blank</th><th class="c">2+ ans.</th><th class="num">Correct</th><th>Difficulty</th><th class="num">Disc.</th><th>Discrimination</th><th>Remark</th></tr></thead><tbody>
-  ${it.map(r=>`<tr><td class="num"><b>${r.i+1}</b></td><td class="c"><b>${LET[keyOf(UI.verView||0)[r.i]]}</b></td>${r.cnt.map((c,o)=>`<td class="c ${o===keyOf(UI.verView||0)[r.i]?'keycol':''} ${c===0&&o!==keyOf(UI.verView||0)[r.i]?'dim':''}">${c} <small class="dim">${pct(c,r.n)}</small></td>`).join('')}
+  ${it.map(r=>`<tr><td class="num"><b>${r.i+1}</b>${(()=>{const qi=itemInfo(r.i,UI.verView||0);return qi?`<div class="qtext" title="${esc(qi.q)}">${esc(qi.q.length>70?qi.q.slice(0,68)+'…':qi.q)}${qi.level?`<small>${esc(qi.level)}</small>`:''}</div>`:''})()}</td><td class="c"><b>${LET[keyOf(UI.verView||0)[r.i]]}</b></td>${r.cnt.map((c,o)=>`<td class="c ${o===keyOf(UI.verView||0)[r.i]?'keycol':''} ${c===0&&o!==keyOf(UI.verView||0)[r.i]?'dim':''}">${c} <small class="dim">${pct(c,r.n)}</small></td>`).join('')}
   <td class="c">${r.blank}</td><td class="c">${r.multi}</td><td class="num">${pct(r.right,r.n)}</td><td>${r.diff}</td><td class="num">${r.D==null?'—':r.D.toFixed(2)}</td><td>${r.disc}</td>
   <td><span class="pill ${r.remark==='Keep'?'ok':r.remark==='Improve'?'warn':r.remark.startsWith('Need')?'':'bad'}">${r.remark}</span>${r.unused.length?` <small class="dim">No one chose ${r.unused.join(', ')}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`;
 }
@@ -1068,7 +1111,7 @@ function resultsView(){
   const multi=versCount()>1&&S.tab!=='scores';
   UI.verView=null;
   const st=stats(),mx=fmt(maxScore());
-  if(multi){UI.verView=UI.verView==null?0:UI.verView;if(UI.verView==null)UI.verView=0}
+  if(multi)UI.verView=UI.verSel===1?1:0;
   const stv=multi?stats():st;
   const body=(multi?verFilterBar():'')+(S.tab==='student'?studentAnalysis(stv):S.tab==='option'?optionAnalysis(stv):scoresTable(st));
   return `<section class="panel">
@@ -1144,7 +1187,7 @@ const ACT={
   keyRescan:()=>{closeModal();ACT.scanKey()},
   keyUse:()=>{const cap=UI.cur;closeModal();const kv=versCount()>1?(cap.cfg&&cap.cfg.vers>1?(cap.cfg.ver||0):curVer()):0;UI.keyVer=kv;const nk=cap.ans.map(a=>a.length===1?a[0]:null);if(kv===1)S.keyB=nk;else S.key=nk;S.keyFrom='scanned sheet';UI.keyErr=null;render();toast(keyComplete()?'Answer key saved':'Answer key added. Fill in the empty ones.')},
   dlKeyTpl:()=>saveFile(`answer-key_${S.cfg.q}-items.csv`,(versCount()>1?'QUESTION,A,B\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''},${keyOf(1)[i]!=null?LET[keyOf(1)[i]]:''}`).join('\r\n'):'QUESTION,ANSWER\r\n'+Array.from({length:S.cfg.q},(_,i)=>`${i+1},${S.key[i]!=null?LET[S.key[i]]:''}`).join('\r\n'))+'\r\n','text/csv'),
-  setKey:b=>{const q=+b.dataset.q,o=+b.dataset.o;const K=curKey();K[q]=K[q]===o?null:o;S.keyFrom=S.keyFrom||'typed in';
+  setKey:b=>{if(S.test){toast('This key comes from the question bank. Make a new test to change it.','bad');return}const q=+b.dataset.q,o=+b.dataset.o;const K=curKey();K[q]=K[q]===o?null:o;S.keyFrom=S.keyFrom||'typed in';
     const row=b.closest('.krow');row.querySelectorAll('.bub').forEach((x,i)=>{const on=curKey()[q]===i;x.classList.toggle('on',on);x.setAttribute('aria-pressed',on)});row.classList.toggle('miss',S.key[q]==null);
     persist();const n=keyCount(),pill=$('#main .pill');if(pill){pill.className='pill '+(n===S.cfg.q?'ok':'warn');pill.textContent=n===S.cfg.q?'✓ Answer key complete':`${n} of ${S.cfg.q} answers set`}
     const nx=$('#main .actions .btn.primary');if(nx)nx.disabled=!keyComplete();$('#stepper').innerHTML;renderStepperOnly()},
@@ -1248,7 +1291,7 @@ const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const normKey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const rollKey=r=>String(r).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
 const GLOBAL_KEYS=['sens','autoSave','sound'];
-const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB','vers','keyFrom','exam','students','listName','results','tab'];
+const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB','vers','test','keyFrom','exam','students','listName','results','tab'];
 
 let LIB=null;
 function libLoad(){try{const t=localStorage.getItem(LIB_KEY);if(t)return JSON.parse(t)}catch(e){}return null}
@@ -1361,7 +1404,7 @@ async function refreshPicCount(){
 function ctxBar(){
   const t=termOf(S.termId),c=S.classId&&getClass(S.classId);
   const bits=[t?esc(t.name)+(t.archived?' (past)':''):'',c?`${c.subject?esc(c.subject)+' · ':''}<b>${esc(c.section)}</b>`:'<span class="dim">No class chosen</span>',S.exam.name?esc(S.exam.name):'<span class="dim">Untitled exam</span>'].filter(Boolean);
-  return `<div class="ctx">${bits.join('<span class="ctx-sep">›</span>')}${c?`<button class="btn small" data-act="openClass" data-id="${c.id}">Open class</button>`:''}</div>`;
+  return `<div class="ctx">${bits.join('<span class="ctx-sep">›</span>')}${S.test&&!NATIVE?'<button class="btn small" data-act="testKit">Test kit</button>':''}${c?`<button class="btn small" data-act="openClass" data-id="${c.id}">Open class</button>`:''}</div>`;
 }
 
 /* ---------- My classes screens ---------- */
@@ -1387,6 +1430,7 @@ function classesView(){
     <button class="btn" data-act="dlClassesEx">${ICON.dl} Example CSV</button>
     <button class="btn" data-act="syncOpen">Google Drive sync</button>
     <button class="btn" data-act="bank">Item bank</button>
+    ${NATIVE?'':'<button class="btn" data-act="goBanks">Question banks</button>'}
     <button class="btn" data-act="backup">Backup &amp; restore</button>
   </div>`}
   ${groups.map(g=>`<h2 class="grp-h">${g.s?esc(g.s):'No subject'} <span class="dim" style="font-weight:400;font-size:.9rem">${g.list.length} class${g.list.length===1?'':'es'}</span></h2>
@@ -1726,7 +1770,7 @@ const hash36=s=>{let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(
 
 /* --- library bookkeeping: tombstones + picture timestamps (synced) --- */
 function ensureSyncFields(){LIB.tomb=LIB.tomb||{};LIB.picMeta=LIB.picMeta||{};LIB.drivePics=LIB.drivePics||{};LIB.savedAt=LIB.savedAt||Date.now();LIB.known=LIB.known||knownIds()}
-function knownIds(){return [...LIB.classes.map(c=>'c:'+c.id),...Object.keys(LIB.exams).map(id=>'x:'+id),...LIB.terms.map(t=>'t:'+t.id)]}
+function knownIds(){return [...LIB.classes.map(c=>'c:'+c.id),...Object.keys(LIB.exams).map(id=>'x:'+id),...LIB.terms.map(t=>'t:'+t.id),...Object.keys(LIB.banks||{}).map(id=>'b:'+id)]}
 function libSave(){
   if(LIB.tomb){const now=Date.now(),cur=new Set(knownIds());(LIB.known||[]).forEach(k=>{if(!cur.has(k))LIB.tomb[k]=now});LIB.known=[...cur];LIB.savedAt=now}
   try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){toast('Phone storage is full. Remove old pictures or exams.','bad')}
@@ -1867,6 +1911,9 @@ function mergeLib(remote){
   const rpm=remote.picMeta||{};Object.keys(rpm).forEach(k=>{if(!alive('p:'+k,rpm[k]))return;if(!(L.picMeta[k]>=rpm[k])){L.picMeta[k]=rpm[k];changed=true}});
   Object.keys(L.picMeta).forEach(k=>{if(!alive('p:'+k,L.picMeta[k]))delete L.picMeta[k]});
   const rdp=remote.drivePics||{};Object.keys(rdp).forEach(k=>{if(!L.drivePics[k]||(rdp[k].at||0)>(L.drivePics[k].at||0)){L.drivePics[k]=rdp[k];changed=true}});
+  const rb=remote.banks||{};L.banks=L.banks||{};
+  Object.values(rb).forEach(b=>{const lb=L.banks[b.id];if(!lb){if(alive('b:'+b.id,b.updatedAt)){L.banks[b.id]=b;changed=true}}else if((b.updatedAt||0)>(lb.updatedAt||0)){L.banks[b.id]=b;changed=true}});
+  Object.keys(L.banks).forEach(id=>{if(!alive('b:'+id,L.banks[id].updatedAt)){delete L.banks[id];changed=true}});
   L.tomb=tomb;L.known=knownIds();
   return changed;
 }
@@ -1994,7 +2041,7 @@ function verTabs(){
 }
 function verFilterBar(){
   if(versCount()<2)return '';
-  const cur=UI.verView||0,n=[0,1].map(v=>Object.values(S.results).filter(r=>(r.ver||0)===v).length);
+  const cur=UI.verSel===1?1:0,n=[0,1].map(v=>Object.values(S.results).filter(r=>(r.ver||0)===v).length);
   return `<div class="seg" style="max-width:340px;margin:0 0 14px" role="group" aria-label="Show version">${[0,1].map(v=>`<button class="${cur===v?'on':''}" data-act="verView" data-v="${v}">Version ${VLET[v]} · ${n[v]} sheet${n[v]===1?'':'s'}</button>`).join('')}</div>`;
 }
 
@@ -2183,12 +2230,14 @@ function backupPanel(){
 /* ---------- sheet type: Bubble Tsek sheet or the original 20-item sheet ---------- */
 function sheetTypeField(){
   const old=isOld(S.cfg),locked=hasResults();
-  return `<div class="field" style="grid-column:1/-1"><label>Bubble sheet</label><div class="seg" role="group" aria-label="Bubble sheet type">${[['bt','Bubble Tsek sheet'],['old20','Original sheet (20 items, A–E)']].map(([t,l])=>`<button class="${(old?'old20':'bt')===t?'on':''}" data-act="setTpl" data-t="${t}" ${locked?'disabled':''}>${l}</button>`).join('')}</div>
-  <p class="help">${old?'Your pre-printed sheet: 3-digit roll number, 20 items, choices A–E. Use the copies you already have, or print more from here.':'Printed from this app. Any number of items and choices.'}${locked?' Can’t change after sheets are scanned.':''}</p></div>`;
+  const cur=old?S.cfg.tpl:'bt';
+  return `<div class="field" style="grid-column:1/-1"><label>Bubble sheet</label><div class="seg" role="group" aria-label="Bubble sheet type">${[['bt','Bubble Tsek sheet'],['school','School sheet']].map(([t,l])=>`<button class="${(old?'school':'bt')===t?'on':''}" data-act="setTpl" data-t="${t==='school'?(TPLS[cur]?cur:'old20'):'bt'}" ${locked?'disabled':''}>${l}</button>`).join('')}</div>
+  ${old?`<div class="seg" style="margin-top:8px" role="group" aria-label="School sheet size">${SCH_LIST.map(T=>`<button class="${cur===T.id?'on':''}" data-act="setTpl" data-t="${T.id}" ${locked?'disabled':''}>${T.cfg.q} items</button>`).join('')}</div>`:''}
+  <p class="help">${old?`Your school's pre-printed sheet: 3-digit roll number, ${S.cfg.q} items, choices A–E. Use the copies you already have, or print more from here. The app knows which size it is when you scan.`:'Printed from this app. Any number of items and choices.'}${locked?' Can’t change after sheets are scanned.':''}</p></div>`;
 }
 Object.assign(ACT,{
   setTpl:b=>{if(hasResults())return;const t=b.dataset.t;
-    if(t==='old20'){S.cfg=Object.assign({},S.cfg,OLD20.cfg,{tpl:'old20'});S.vers=1}
+    if(TPLS[t]){S.cfg=Object.assign({},S.cfg,TPLS[t].cfg,{tpl:t});S.vers=1}
     else{S.cfg=Object.assign({},S.cfg);delete S.cfg.tpl}
     fitKey();persist();render()}
 });
@@ -2196,11 +2245,11 @@ Object.assign(ACT,{
 Object.assign(ACT,{
   setVers:b=>{if(isOld(S.cfg))return;const v=+b.dataset.v;S.vers=v;if(v>1){S.keyB=S.keyB||Array(S.cfg.q).fill(null)}UI.keyVer=0;persist();render()},
   keyVer:b=>{UI.keyVer=+b.dataset.v;render()},
-  verView:b=>{UI.verView=+b.dataset.v;render()},
+  verView:b=>{UI.verSel=+b.dataset.v;render()},
   bank:()=>{UI.view='bank';render()},
   bankSet:sel=>{const k=sel.dataset.k;UI.bank=UI.bank||{};UI.bank[k]=k==='min'?+sel.value:sel.value;render()},
   bankMore:()=>{UI.bank.limit=(UI.bank.limit||50)+50;render()},
-  bankOpen:b=>{openExam(b.dataset.id);S.step=5;S.tab='option';UI.verView=+b.dataset.v;UI.view='exam';persist();render()},
+  bankOpen:b=>{openExam(b.dataset.id);S.step=5;S.tab='option';UI.verSel=+b.dataset.v;UI.view='exam';persist();render()},
   bankExcel:()=>{const rows=itemBankRows();if(!rows.length)return;
     const stamp=today();
     shareOrSave(`BubbleTsek-item-bank_${stamp}.xlsx`,bankExcelBytes(rows),XLSX_MIME,'Item bank')},
@@ -2230,6 +2279,1008 @@ Object.assign(ACT,{
     else go();
   });
 })();
+
+
+/* ================= PHASE 6: question banks, make-a-test, test kit, quiz game, shaded key sheet (from the Quiz & Exam Builder) ================= */
+function qbEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function qbJson(obj){
+  return JSON.stringify(obj).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');
+}
+function qbPayload(set){
+  return set.map(function(q){
+    var letters = Object.keys(q.options).sort();
+    return {
+      q: q.question,
+      o: letters.map(function(L){ return q.options[L]; }),
+      a: letters.indexOf(q.correct),
+      lv: q.level || '',
+      tp: (q.topic && q.topic !== 'Uncategorised') ? q.topic : '',
+      ob: q.objective || ''
+    };
+  });
+}
+
+/* ---------------- QUIZ GAME (lobby + play + finished + results) ---------------- */
+function buildQuizGame(set, meta){
+  var data = qbPayload(set);
+  return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'<title>' + qbEsc(meta.title) + '</title>\n<style>\n' +
+'*{box-sizing:border-box;}\n' +
+'body{margin:0;min-height:100vh;font-family:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;' +
+'background:linear-gradient(135deg,#5B67CA 0%,#7E4FA8 55%,#3F8FD0 100%);background-attachment:fixed;color:#fff;' +
+'display:flex;align-items:center;justify-content:center;padding:24px 16px;}\n' +
+'.screen{display:none;width:100%;max-width:860px;}\n.screen.on{display:block;}\n' +
+'.card{background:rgba(255,255,255,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);' +
+'border:1px solid rgba(255,255,255,.25);border-radius:22px;padding:40px;box-shadow:0 18px 50px rgba(0,0,0,.3);}\n' +
+'@media(max-width:600px){.card{padding:24px 20px;border-radius:16px;}}\n' +
+'h1{font-size:2rem;margin:0 0 10px;line-height:1.25;}\n' +
+'.lead{font-size:1.02rem;opacity:.92;margin:0 0 22px;line-height:1.6;}\n' +
+'.facts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;}\n' +
+'.fact{background:rgba(255,255,255,.16);border-radius:12px;padding:10px 16px;font-size:.9rem;}\n' +
+'.fact b{display:block;font-size:1.25rem;}\n' +
+'label.fl{display:block;font-size:.86rem;font-weight:600;margin:0 0 6px;opacity:.9;}\n' +
+'input.fi{width:100%;padding:13px 15px;border-radius:11px;border:1px solid rgba(255,255,255,.35);' +
+'background:rgba(255,255,255,.92);color:#222;font-size:1rem;font-family:inherit;margin-bottom:16px;}\n' +
+'input.fi:focus{outline:3px solid rgba(255,255,255,.6);}\n' +
+'.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}\n' +
+'@media(max-width:600px){.two{grid-template-columns:1fr;gap:0;}}\n' +
+'.btn{border:none;border-radius:12px;padding:15px 32px;font-size:1.05rem;font-weight:700;cursor:pointer;' +
+'font-family:inherit;background:#FF4F81;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.28);transition:.18s;}\n' +
+'.btn:hover{background:#ED3A6E;transform:translateY(-2px);}\n' +
+'.btn.ghost{background:rgba(255,255,255,.2);box-shadow:none;}\n' +
+'.btn.ghost:hover{background:rgba(255,255,255,.32);}\n' +
+'.btn.sm{padding:9px 18px;font-size:.88rem;border-radius:10px;}\n' +
+'.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}\n' +
+'.err{background:rgba(255,80,80,.25);border:1px solid rgba(255,160,160,.6);border-radius:10px;padding:10px 14px;font-size:.9rem;margin-bottom:14px;}\n' +
+'.hide{display:none !important;}\n' +
+'.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:.9rem;}\n' +
+'.ctrl{display:flex;align-items:center;gap:10px;}\n' +
+'.pill{background:rgba(255,255,255,.2);border-radius:20px;padding:5px 14px;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}\n' +
+'.timer{font-variant-numeric:tabular-nums;font-size:1.15rem;font-weight:700;background:rgba(255,255,255,.2);padding:6px 16px;border-radius:12px;}\n' +
+'.timer.low{background:#FF4F81;animation:pulse 1s infinite;}\n' +
+'@keyframes pulse{50%{opacity:.55;}}\n' +
+'.track{height:7px;background:rgba(255,255,255,.2);border-radius:6px;overflow:hidden;margin-bottom:24px;}\n' +
+'.track i{display:block;height:100%;background:#FFD166;transition:width .3s;}\n' +
+'.qt{font-size:1.45rem;font-weight:700;line-height:1.4;margin:0 0 24px;}\n' +
+'@media(max-width:600px){.qt{font-size:1.15rem;}}\n' +
+'.opts{display:flex;flex-direction:column;gap:12px;}\n' +
+'.opt{display:flex;gap:14px;align-items:flex-start;text-align:left;width:100%;padding:15px 18px;border:3px solid transparent;border-radius:13px;' +
+'background:#fff;color:#2A2A2A;font-size:1.02rem;font-family:inherit;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.18);transition:.15s;}\n' +
+'.opt:hover{transform:translateX(4px);}\n' +
+'.opt .L{font-weight:800;flex:none;width:24px;}\n' +
+'.opt.sel{border-color:#FFD166;background:#FFF6DC;}\n' +
+'.opt.sel .L{color:#B5791A;}\n' +
+'.pausebox{text-align:center;padding:60px 20px;}\n' +
+'.pausebox .big{font-size:3.4rem;margin-bottom:8px;}\n' +
+'.pausebox p{font-size:1.1rem;opacity:.9;margin:0;}\n' +
+'.foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:26px;flex-wrap:wrap;}\n' +
+'.foot .note{font-size:.85rem;opacity:.75;}\n' +
+'.score{font-size:4rem;font-weight:800;line-height:1;margin:6px 0 4px;}\n' +
+'.pct{font-size:1.15rem;opacity:.9;margin:0 0 22px;}\n' +
+'.brk{display:flex;flex-direction:column;gap:9px;margin:0 0 26px;}\n' +
+'.brk .r{display:grid;grid-template-columns:150px 1fr 60px;gap:12px;align-items:center;font-size:.9rem;}\n' +
+'@media(max-width:600px){.brk .r{grid-template-columns:110px 1fr 54px;font-size:.82rem;}}\n' +
+'.brk .t{height:9px;background:rgba(255,255,255,.2);border-radius:6px;overflow:hidden;}\n' +
+'.brk .t i{display:block;height:100%;background:#FFD166;}\n' +
+'.rev{background:rgba(255,255,255,.1);border-radius:14px;padding:6px 20px;max-height:340px;overflow-y:auto;margin-bottom:22px;}\n' +
+'.rv{padding:14px 0;border-bottom:1px solid rgba(255,255,255,.16);font-size:.92rem;}\n' +
+'.rv:last-child{border-bottom:none;}\n' +
+'.rv p{margin:0 0 5px;}\n.rv .qq{font-weight:700;}\n' +
+'.rv .ok{color:#B7F0D0;}\n.rv .no{color:#FFC3BE;}\n' +
+'@media print{body{background:#fff;color:#111;display:block;}.card{background:#fff;border:none;box-shadow:none;backdrop-filter:none;}' +
+'.noprint{display:none !important;}.rev{background:#F4F4F4;max-height:none;}.rv{border-color:#ddd;}' +
+'.brk .t{background:#eee;}.brk .t i{background:#888;}.rv .ok{color:#2E7D50;}.rv .no{color:#B33;}.pill{background:#eee;color:#333;}}\n' +
+'</style>\n</head>\n<body>\n' +
+
+/* ---- lobby ---- */
+'<div class="screen on" id="s-lobby"><div class="card">' +
+'<h1>' + qbEsc(meta.title) + '</h1>' +
+'<p class="lead">' + qbEsc(meta.lobbyLine) + '</p>' +
+'<div class="facts">' +
+'<div class="fact"><b>' + set.length + '</b>question' + (set.length===1?'':'s') + '</div>' +
+(meta.seconds > 0 ? '<div class="fact"><b>' + meta.seconds + 's</b>per question</div>' : '<div class="fact"><b>∞</b>no time limit</div>') +
+'<div class="fact"><b>🔒</b>answers hidden until the end</div>' +
+'</div>' +
+'<div id="lobbyErr" class="err hide"></div>' +
+'<div class="two"><div><label class="fl" for="nm">Your full name</label><input class="fi" id="nm" placeholder="e.g. Juan Dela Cruz" autocomplete="off"></div>' +
+'<div><label class="fl" for="sc">Section</label><input class="fi" id="sc" placeholder="e.g. BSIT 1-A" autocomplete="off"></div></div>' +
+'<button class="btn" id="go">Start the quiz →</button>' +
+'<p style="margin:16px 0 0;font-size:.82rem;opacity:.75;">Tip: you can press A–E or 1–5 on the keyboard to choose, and Enter to go to the next question.</p>' +
+'</div></div>' +
+
+/* ---- play ---- */
+'<div class="screen" id="s-play"><div class="card">' +
+'<div class="bar"><div><span id="prog"></span> &nbsp;<span class="pill" id="lvl"></span></div>' +
+'<div class="ctrl"><span class="timer" id="tmr">--</span>' +
+'<button class="btn ghost sm" id="ps">⏸ Pause</button></div></div>' +
+'<div class="track"><i id="trk" style="width:0%"></i></div>' +
+'<div id="qwrap"><p class="qt" id="qt"></p><div class="opts" id="opts"></div></div>' +
+'<div id="pausebox" class="pausebox hide"><div class="big">⏸</div><p>Paused — the timer has stopped.</p>' +
+'<p style="font-size:.9rem;opacity:.7;margin-top:8px;">Press Resume to carry on.</p></div>' +
+'<div class="foot"><span class="note" id="pickNote"></span>' +
+'<button class="btn" id="nx">Next →</button></div>' +
+'</div></div>' +
+
+/* ---- finished, before results ---- */
+'<div class="screen" id="s-end"><div class="card" style="text-align:center;">' +
+'<div style="font-size:3.6rem;line-height:1;margin-bottom:10px;">🎉</div>' +
+'<h1>All done!</h1>' +
+'<p class="lead" id="endWho" style="margin-bottom:6px;"></p>' +
+'<p class="lead">Your answers have been recorded. Please wait for your teacher before checking the results.</p>' +
+'<button class="btn" id="showRes">Show results</button>' +
+'<p style="margin:16px 0 0;font-size:.82rem;opacity:.7;">Teacher: press this when the whole class has finished.</p>' +
+'</div></div>' +
+
+/* ---- results ---- */
+'<div class="screen" id="s-done"><div class="card">' +
+'<p style="margin:0;opacity:.85;font-size:.95rem;" id="who"></p>' +
+'<p class="score" id="sc2">0 / 0</p><p class="pct" id="pct"></p>' +
+'<div class="brk" id="brk"></div>' +
+'<h3 style="margin:0 0 10px;font-size:1.05rem;">Question by question</h3>' +
+'<div class="rev" id="rev"></div>' +
+'<div class="noprint" style="display:flex;gap:12px;flex-wrap:wrap;">' +
+'<button class="btn" onclick="window.print()">Print / save my result</button>' +
+'<button class="btn ghost" id="again">Take it again</button></div>' +
+'</div></div>' +
+
+'<script>\n(function(){\n' +
+'var Q=' + qbJson(data) + ';\n' +
+'var SEC=' + (meta.seconds|0) + ';\n' +
+'var i=0,t=null,left=0,paused=false,name="",sect="",picks=[];\n' +
+'function $(x){return document.getElementById(x);}\n' +
+'function esc(s){return String(s==null?"":s).replace(/[&<>"\']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","\'":"&#39;"}[c];});}\n' +
+'function show(id){["s-lobby","s-play","s-end","s-done"].forEach(function(s){$(s).classList.toggle("on",s===id);});window.scrollTo(0,0);}\n' +
+
+'$("go").addEventListener("click",function(){\n' +
+'  name=$("nm").value.trim(); sect=$("sc").value.trim();\n' +
+'  if(!name){ var e=$("lobbyErr"); e.textContent="Please type your name before starting."; e.classList.remove("hide"); $("nm").focus(); return; }\n' +
+'  $("lobbyErr").classList.add("hide");\n' +
+'  picks=new Array(Q.length).fill(null); i=0; paused=false;\n' +
+'  show("s-play"); render();\n' +
+'});\n' +
+'$("nm").addEventListener("keydown",function(e){ if(e.key==="Enter") $("sc").focus(); });\n' +
+'$("sc").addEventListener("keydown",function(e){ if(e.key==="Enter") $("go").click(); });\n' +
+
+'function render(){\n' +
+'  var q=Q[i];\n' +
+'  $("prog").textContent="Question "+(i+1)+" of "+Q.length;\n' +
+'  var lv=$("lvl"); lv.textContent=q.lv||""; lv.style.display=q.lv?"":"none";\n' +
+'  $("trk").style.width=Math.round(i/Q.length*100)+"%";\n' +
+'  $("qt").textContent=q.q;\n' +
+'  var box=$("opts"); box.innerHTML="";\n' +
+'  q.o.forEach(function(txt,k){\n' +
+'    var b=document.createElement("button"); b.className="opt"+(picks[i]===k?" sel":""); b.type="button";\n' +
+'    b.innerHTML=\'<span class="L">\'+String.fromCharCode(65+k)+\'</span><span>\'+esc(txt)+\'</span>\';\n' +
+'    b.addEventListener("click",function(){ pick(k); });\n' +
+'    box.appendChild(b);\n' +
+'  });\n' +
+'  $("nx").textContent = (i===Q.length-1) ? "Finish →" : "Next →";\n' +
+'  updateNote(); startTimer();\n' +
+'}\n' +
+
+'function updateNote(){\n' +
+'  $("pickNote").textContent = picks[i]===null\n' +
+'    ? "Choose an answer, or press Next to skip."\n' +
+'    : "Answer "+String.fromCharCode(65+picks[i])+" selected — you can still change it.";\n' +
+'}\n' +
+
+'function pick(k){\n' +
+'  if(paused) return;\n' +
+'  picks[i]=k;\n' +
+'  var btns=$("opts").querySelectorAll(".opt");\n' +
+'  for(var n=0;n<btns.length;n++) btns[n].classList.toggle("sel",n===k);\n' +
+'  updateNote();\n' +
+'}\n' +
+
+'function startTimer(){\n' +
+'  clearInterval(t); var el=$("tmr");\n' +
+'  if(SEC<=0){ el.textContent="No limit"; el.classList.remove("low"); return; }\n' +
+'  left=SEC; el.classList.remove("low"); el.textContent=left+"s";\n' +
+'  t=setInterval(function(){\n' +
+'    if(paused) return;\n' +
+'    left--; el.textContent=(left>0?left:0)+"s"; el.classList.toggle("low",left<=5);\n' +
+'    if(left<=0){ clearInterval(t); advance(); }\n' +
+'  },1000);\n' +
+'}\n' +
+
+'function advance(){ clearInterval(t); i++; if(i<Q.length) render(); else finishQuiz(); }\n' +
+'$("nx").addEventListener("click",function(){ if(!paused) advance(); });\n' +
+
+'$("ps").addEventListener("click",function(){\n' +
+'  paused=!paused;\n' +
+'  $("ps").textContent = paused ? "▶ Resume" : "⏸ Pause";\n' +
+'  $("qwrap").classList.toggle("hide",paused);\n' +
+'  $("pausebox").classList.toggle("hide",!paused);\n' +
+'  $("nx").disabled = paused;\n' +
+'});\n' +
+
+'function finishQuiz(){\n' +
+'  clearInterval(t); $("trk").style.width="100%";\n' +
+'  $("endWho").textContent=name+(sect?" · "+sect:"");\n' +
+'  show("s-end");\n' +
+'}\n' +
+
+'$("showRes").addEventListener("click",function(){ buildResults(); show("s-done"); });\n' +
+
+'function buildResults(){\n' +
+'  var score=0; Q.forEach(function(q,n){ if(picks[n]===q.a) score++; });\n' +
+'  $("who").textContent=name+(sect?" · "+sect:"")+" · "+new Date().toLocaleDateString();\n' +
+'  $("sc2").textContent=score+" / "+Q.length;\n' +
+'  var p=Q.length?Math.round(score/Q.length*100):0;\n' +
+'  var word=p>=90?"Outstanding!":p>=75?"Well done!":p>=50?"Good effort — keep reviewing.":"Time for another review round.";\n' +
+'  $("pct").textContent=p+"% · "+word;\n' +
+'  var byL={}; Q.forEach(function(q,n){ var L=q.lv||"All questions";\n' +
+'    if(!byL[L]) byL[L]={t:0,c:0}; byL[L].t++; if(picks[n]===q.a) byL[L].c++; });\n' +
+'  var keys=Object.keys(byL);\n' +
+'  $("brk").innerHTML = keys.length>1 ? keys.map(function(L){ var d=byL[L];\n' +
+'    return \'<div class="r"><span>\'+esc(L)+\'</span><span class="t"><i style="width:\'+Math.round(d.c/d.t*100)+\'%"></i></span><span>\'+d.c+"/"+d.t+"</span></div>"; }).join("") : "";\n' +
+'  $("rev").innerHTML=Q.map(function(q,n){ var ok=picks[n]===q.a;\n' +
+'    var mine = (picks[n]===null||picks[n]===undefined) ? "No answer given" : String.fromCharCode(65+picks[n])+") "+esc(q.o[picks[n]]);\n' +
+'    return \'<div class="rv"><p class="qq">\'+(n+1)+". "+esc(q.q)+\'</p><p class="\'+(ok?"ok":"no")+\'">Your answer: \'+mine+"</p>"+\n' +
+'      (ok?"":\'<p class="ok">Correct answer: \'+String.fromCharCode(65+q.a)+") "+esc(q.o[q.a])+"</p>")+"</div>"; }).join("");\n' +
+'}\n' +
+
+'$("again").addEventListener("click",function(){ i=0; picks=new Array(Q.length).fill(null); paused=false;\n' +
+'  $("ps").textContent="⏸ Pause"; $("qwrap").classList.remove("hide"); $("pausebox").classList.add("hide"); $("nx").disabled=false;\n' +
+'  show("s-play"); render(); });\n' +
+
+'document.addEventListener("keydown",function(e){\n' +
+'  if(!$("s-play").classList.contains("on")||paused) return;\n' +
+'  if(e.key==="Enter"){ e.preventDefault(); advance(); return; }\n' +
+'  var k=-1, c=String(e.key).toUpperCase();\n' +
+'  if(c>="A"&&c<="E") k=c.charCodeAt(0)-65;\n' +
+'  else if(e.key>="1"&&e.key<="5") k=parseInt(e.key,10)-1;\n' +
+'  if(k>=0&&k<Q[i].o.length){ e.preventDefault(); pick(k); }\n' +
+'});\n' +
+'})();\n' +
+'<\/script>\n</body>\n</html>';
+}
+
+/* ---------------- ANSWER KEY ---------------- */
+function buildKey(set, meta, keyLabel){
+  var rows = set.map(function(q, i){
+    var letters = Object.keys(q.options).sort();
+    return '<tr>' +
+      '<td class="n">' + (i+1) + '</td>' +
+      '<td><div class="q">' + qbEsc(q.question) + '</div>' +
+        '<div class="ans"><b>' + q.correct + ')</b> ' + qbEsc(q.options[q.correct]) + '</div>' +
+        (q.objective ? '<div class="obj">Objective: ' + qbEsc(q.objective) + '</div>' : '') +
+      '</td>' +
+      '<td class="meta">' + qbEsc(q.level || '') + (q.topic && q.topic !== 'Uncategorised' ? '<br><span>' + qbEsc(q.topic) + '</span>' : '') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  var tally = {};
+  set.forEach(function(q){ var L = q.correct; tally[L] = (tally[L]||0)+1; });
+  var tallyStr = ['A','B','C','D','E'].filter(function(L){ return tally[L]; })
+    .map(function(L){ return L + ': ' + tally[L]; }).join(' · ');
+
+  return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'<title>' + qbEsc(meta.title) + ' — ' + qbEsc(keyLabel) + '</title>\n<style>\n' +
+'*{box-sizing:border-box;}\n' +
+'body{margin:0;background:#F6F5F0;color:#1C1B18;font-family:Georgia,"Times New Roman",serif;line-height:1.55;padding:30px 18px 70px;}\n' +
+'.sheet{max-width:860px;margin:0 auto;background:#fff;border:1px solid #E4E1D7;border-radius:10px;padding:44px 46px;}\n' +
+'@media(max-width:600px){.sheet{padding:24px 20px;}}\n' +
+'.stamp{display:inline-block;background:#A24438;color:#fff;font-family:Arial,sans-serif;font-size:.7rem;font-weight:700;' +
+'letter-spacing:.12em;text-transform:uppercase;padding:5px 12px;border-radius:4px;margin-bottom:16px;}\n' +
+'h1{font-size:1.5rem;font-weight:normal;margin:0 0 4px;}\n' +
+'.sub{font-family:Arial,sans-serif;font-size:.85rem;color:#6A665C;margin:0 0 24px;}\n' +
+'table{width:100%;border-collapse:collapse;}\n' +
+'td{padding:13px 10px;border-top:1px solid #EFEDE6;vertical-align:top;}\n' +
+'tr:first-child td{border-top:none;}\n' +
+'td.n{width:34px;font-family:Arial,sans-serif;font-weight:700;color:#6A665C;font-size:.9rem;}\n' +
+'td.meta{width:150px;font-family:Arial,sans-serif;font-size:.75rem;color:#6A665C;text-align:right;text-transform:uppercase;letter-spacing:.03em;}\n' +
+'td.meta span{text-transform:none;letter-spacing:0;opacity:.8;}\n' +
+'.q{margin-bottom:5px;}\n' +
+'.ans{color:#3F7A5C;font-size:.97rem;}\n' +
+'.obj{font-family:Arial,sans-serif;font-size:.76rem;color:#6A665C;margin-top:4px;font-style:italic;}\n' +
+'.tally{margin-top:28px;padding-top:16px;border-top:2px solid #E4E1D7;font-family:Arial,sans-serif;font-size:.82rem;color:#6A665C;}\n' +
+'.bar{max-width:860px;margin:0 auto 16px;display:flex;gap:10px;}\n' +
+'.bar button{font-family:Arial,sans-serif;border:none;background:#1F3552;color:#fff;padding:10px 20px;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;}\n' +
+'@media print{body{background:#fff;padding:0;}.sheet{border:none;border-radius:0;padding:0;max-width:none;}.bar{display:none;}}\n' +
+'</style>\n</head>\n<body>\n' +
+'<div class="bar"><button onclick="window.print()">Print this key</button></div>' +
+'<div class="sheet">' +
+'<span class="stamp">Teacher copy — do not distribute</span>' +
+'<h1>' + qbEsc(meta.title) + '</h1>' +
+'<p class="sub">' + qbEsc(keyLabel) + ' · ' + set.length + ' item' + (set.length===1?'':'s') + '</p>' +
+'<table>' + rows + '</table>' +
+'<p class="tally">Answer spread — ' + tallyStr + '</p>' +
+'</div>\n</body>\n</html>';
+}
+
+/* ---------------- PRINTABLE EXAM ---------------- */
+function buildExam(set, meta){
+  var qs = set.map(function(q, i){
+    var opts = Object.keys(q.options).sort().map(function(L){
+      return '<div class="o">' + L + ') ' + qbEsc(q.options[L]) + '</div>';
+    }).join('');
+    return '<div class="item"><p class="qt">' + (i+1) + '. ' + qbEsc(q.question) + '</p><div class="os">' + opts + '</div></div>';
+  }).join('');
+
+  var sheetRows = set.map(function(q, i){
+    var letters = Object.keys(q.options).sort();
+    return '<div class="sr"><span class="sn">' + (i+1) + '.</span>' +
+      letters.map(function(L){ return '<span class="sb">' + L + '</span>'; }).join('') + '</div>';
+  }).join('');
+
+  return '<!DOCTYPE html>\n<html lang="en">\n<head>\n<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'<title>' + qbEsc(meta.title) + '</title>\n<style>\n' +
+'*{box-sizing:border-box;}\n' +
+'body{margin:0;background:#F6F5F0;color:#111;font-family:Georgia,"Times New Roman",serif;line-height:1.5;padding:30px 18px 70px;}\n' +
+'.bar{max-width:820px;margin:0 auto 16px;display:flex;gap:10px;flex-wrap:wrap;}\n' +
+'.bar button{font-family:Arial,sans-serif;border:none;background:#1F3552;color:#fff;padding:10px 20px;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;}\n' +
+'.bar .tip{font-family:Arial,sans-serif;font-size:.82rem;color:#6A665C;align-self:center;}\n' +
+'.paper{max-width:820px;margin:0 auto;background:#fff;border:1px solid #E4E1D7;border-radius:10px;padding:52px 56px;}\n' +
+'@media(max-width:600px){.paper{padding:26px 22px;}}\n' +
+'h1{text-align:center;font-size:1.45rem;font-weight:normal;margin:0 0 6px;}\n' +
+'.ver{text-align:center;font-family:Arial,sans-serif;font-weight:700;letter-spacing:.12em;margin:0 0 4px;}\n' +
+'.inst{text-align:center;font-size:.9rem;color:#444;margin:0 0 30px;font-style:italic;}\n' +
+'.idline{display:grid;grid-template-columns:1fr 1fr;gap:20px 40px;margin-bottom:34px;font-size:.95rem;}\n' +
+'.idline span{border-bottom:1px solid #111;padding-bottom:3px;}\n' +
+'.item{margin-bottom:19px;break-inside:avoid;page-break-inside:avoid;}\n' +
+'.qt{margin:0 0 7px;font-size:1rem;}\n' +
+'.os{padding-left:24px;}\n' +
+'.o{font-size:.95rem;margin-bottom:3px;}\n' +
+'.sheet{margin-top:46px;break-before:page;page-break-before:always;}\n' +
+'.sheet h2{text-align:center;font-size:1.2rem;font-weight:normal;margin:0 0 6px;}\n' +
+'.sheet .inst{margin-bottom:24px;}\n' +
+'.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px 22px;}\n' +
+'.sr{display:flex;align-items:center;gap:7px;font-family:Arial,sans-serif;font-size:.82rem;}\n' +
+'.sn{width:26px;text-align:right;color:#555;}\n' +
+'.sb{width:21px;height:21px;border:1px solid #333;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.68rem;color:#555;}\n' +
+'@media print{body{background:#fff;padding:0;}.paper{border:none;border-radius:0;padding:0;max-width:none;}.bar{display:none;}@page{margin:18mm;}}\n' +
+'</style>\n</head>\n<body>\n' +
+'<div class="bar"><button onclick="window.print()">Print this exam</button><span class="tip">Tip: in the print window, choose “Save as PDF” if you want a digital copy.</span></div>' +
+'<div class="paper">' +
+'<h1>' + qbEsc(meta.title) + '</h1>' +
+(meta.version ? '<p class="ver">VERSION ' + qbEsc(meta.version) + '</p>' : '') +
+'<p class="inst">Read each item carefully. Shade the letter of the best answer on your bubble sheet' + (meta.version ? ' (use a VERSION ' + qbEsc(meta.version) + ' sheet)' : '') + '. ' + set.length + ' item' + (set.length===1?'':'s') + '.</p>' +
+'<div class="idline"><span>Name:</span><span>Section:</span><span>Date:</span><span>Score:</span></div>' +
+qs +
+
+'</div>\n</body>\n</html>';
+}
+
+/* ---------------- CSV templates ---------------- */
+var TEMPLATE_CSV = [
+'Question,Option A,Option B,Option C,Option D,Option E,CORRECT ANSWER,DIFFICULTY,BLOOMS,CONTENT,OBJECTIVES',
+'"Type your question here","First choice","Second choice","Third choice","Fourth choice","Fifth choice (optional)",B,Easy,Remembering,"Your topic","Your learning objective"',
+',,,,,,,,Remembering,,',
+',,,,,,,,Understanding,,',
+',,,,,,,,Applying,,',
+',,,,,,,,Analyzing,,',
+',,,,,,,,Evaluating,,',
+',,,,,,,,Creating,,'
+].join('\n');
+
+var SAMPLE_CSV = [
+'Question,Option A,Option B,Option C,Option D,Option E,CORRECT ANSWER,DIFFICULTY,BLOOMS,CONTENT,OBJECTIVES',
+'"What does DBMS stand for?","Database Management System","Data Backup Management Service","Digital Business Modelling Suite","Distributed Binary Memory Store","Dynamic Buffer Mapping System",A,Easy,Remembering,"Introduction to Database Systems","Identify the major components of a database system."',
+'"Which term describes raw unprocessed facts?","Information","Data","Knowledge","Metadata","Schema",B,Easy,Remembering,"Introduction to Database Systems","Differentiate data, information and knowledge."',
+'"Why is information more useful than raw data?","It is stored in smaller files","It has been processed to carry meaning","It is always numeric","It never needs updating","It is stored on paper",B,Moderate,Understanding,"Introduction to Database Systems","Differentiate data, information and knowledge."',
+'"A table stores each student number only once. Which key does this describe?","Foreign key","Primary key","Composite attribute","Index file","View",B,Moderate,Applying,"Relational Model","Apply relational concepts to design tables, keys and relationships."',
+'"A table repeats a department name in every employee row. What problem is this?","Update anomaly from redundancy","Loss of referential integrity","Missing primary key","Incorrect data type","Broken index",A,Difficult,Analyzing,"Normalization","Analyze table designs and normalize them up to 3NF."',
+'"Which SQL clause filters rows before grouping?","HAVING","WHERE","ORDER BY","GROUP BY","LIMIT",B,Moderate,Understanding,"SQL Fundamentals","Write SQL statements to create, query and modify data."',
+'"Which join returns only rows matching in both tables?","LEFT JOIN","RIGHT JOIN","INNER JOIN","FULL OUTER JOIN","CROSS JOIN",C,Moderate,Applying,"SQL Fundamentals","Use joins and aggregate functions to answer questions from multiple tables."',
+'"Two designs are proposed. Which is the better basis for judging them?","Which one has fewer tables","Which one removes redundancy while keeping the data recoverable","Which one was written first","Which one uses longer column names","Which one has more indexes",B,Difficult,Evaluating,"Normalization","Analyze table designs and normalize them up to 3NF."',
+'"You must design a schema for a library. What is the best first step?","Write the SQL immediately","Identify the entities and their relationships","Buy a server","Create indexes","Write the user manual",B,Difficult,Creating,"Relational Model","Apply relational concepts to design tables, keys and relationships."',
+'"Which statement removes a table completely?","DELETE FROM table","DROP TABLE table","TRUNCATE table","ALTER TABLE table","CLEAR TABLE table",B,Easy,Remembering,"SQL Fundamentals","Write SQL statements to create, query and modify data."'
+].join('\n');
+
+/* ---------- question-bank parsing (from the Quiz & Exam Builder, kept private) ---------- */
+const QBP=(function(){
+  var LETTERS=['A','B','C','D','E'];
+  var BLOOM_ORDER = ['Remembering','Understanding','Applying','Analyzing','Evaluating','Creating'];
+  var DIFF_ORDER  = ['Easy','Moderate','Difficult'];
+  var LETTERS = ['A','B','C','D','E'];
+
+  var ALIASES = {
+    question:   ['question','questions','question text','item','stem','q'],
+    a:['option a','optiona','option_a','choice a','a','opt a'],
+    b:['option b','optionb','option_b','choice b','b','opt b'],
+    c:['option c','optionc','option_c','choice c','c','opt c'],
+    d:['option d','optiond','option_d','choice d','d','opt d'],
+    e:['option e','optione','option_e','choice e','e','opt e'],
+    correct:    ['correct answer','correctanswer','correct_answer','answer','correct','key','answer key','correct option'],
+    blooms:     ['blooms','bloom','blooms level','bloom level','blooms taxonomy','bloom’s','bloom\'s','bloom\'s level','cognitive level','taxonomy','level'],
+    difficulty: ['difficulty','difficulty level','diff','hardness'],
+    content:    ['content','topic','lesson','subject','unit','chapter','content area','module'],
+    objectives: ['objectives','objective','learning objective','learning objectives','lo','outcome','learning outcome']
+  };
+
+  /* ===================== tiny helpers ===================== */
+  function $(id){ return document.getElementById(id); }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function shuffle(a){
+    for (var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; }
+    return a;
+  }
+  function titleCase(s){ return s.charAt(0).toUpperCase()+s.slice(1).toLowerCase(); }
+  function plural(n,w){ return n+' '+w+(n===1?'':'s'); }
+
+  function showView(id){
+    var v = document.querySelectorAll('.view');
+    for (var i=0;i<v.length;i++) v[i].classList.remove('active');
+    $(id).classList.add('active');
+    var order = ['start','upload','build','preview'];
+    var step = id.replace('view-','');
+    var idx = order.indexOf(step);
+    var els = document.querySelectorAll('.step');
+    for (var k=0;k<els.length;k++){
+      var pos = order.indexOf(els[k].dataset.step);
+      els[k].classList.toggle('current', pos === idx);
+      els[k].classList.toggle('done', pos < idx);
+    }
+    window.scrollTo(0,0);
+  }
+
+  function note(kind, title, body){
+    return '<div class="note note-'+kind+'"><strong>'+esc(title)+'</strong>'+body+'</div>';
+  }
+
+  /* ===================== CSV parsing ===================== */
+  function sniffDelimiter(text){
+    var line = text.split(/\r?\n/)[0] || '';
+    var counts = { ',':0, ';':0, '\t':0 };
+    var inQ = false;
+    for (var i=0;i<line.length;i++){
+      var c = line[i];
+      if (c === '"') inQ = !inQ;
+      else if (!inQ && counts.hasOwnProperty(c)) counts[c]++;
+    }
+    var best = ',', bestN = counts[','];
+    if (counts[';'] > bestN){ best = ';'; bestN = counts[';']; }
+    if (counts['\t'] > bestN){ best = '\t'; }
+    return best;
+  }
+
+  function parseCSV(text, delim){
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    var rows=[], row=[], field='', inQ=false;
+    for (var i=0;i<text.length;i++){
+      var c = text[i];
+      if (inQ){
+        if (c === '"'){
+          if (text[i+1] === '"'){ field += '"'; i++; }
+          else inQ = false;
+        } else field += c;
+      } else {
+        if (c === '"') inQ = true;
+        else if (c === delim){ row.push(field); field=''; }
+        else if (c === '\r'){ /* ignore */ }
+        else if (c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else field += c;
+      }
+    }
+    if (field.length || row.length){ row.push(field); rows.push(row); }
+    return rows.filter(function(r){ return r.some(function(c){ return String(c).trim() !== ''; }); });
+  }
+
+  function normHeader(h){
+    return String(h).replace(/﻿/g,'').trim().toLowerCase()
+      .replace(/[‘’]/g,"'").replace(/[_\-.]+/g,' ').replace(/\s+/g,' ');
+  }
+
+  function mapHeaders(headerRow){
+    var map = {};
+    headerRow.forEach(function(h, idx){
+      var n = normHeader(h);
+      for (var key in ALIASES){
+        if (map.hasOwnProperty(key)) continue;
+        if (ALIASES[key].indexOf(n) !== -1) map[key] = idx;
+      }
+    });
+    // second pass: fuzzy for option columns like "a." or "choice1"
+    if (!('a' in map)){
+      headerRow.forEach(function(h, idx){
+        var n = normHeader(h).replace(/[^a-z ]/g,'');
+        ['a','b','c','d','e'].forEach(function(L){
+          if (!(L in map) && (n === L || n === 'option '+L || n === 'choice '+L)) map[L] = idx;
+        });
+      });
+    }
+    return map;
+  }
+
+  function canonLevel(raw){
+    var n = String(raw).trim().toLowerCase();
+    if (!n) return null;
+    var bloomMap = {
+      'remember':'Remembering','remembering':'Remembering','knowledge':'Remembering','recall':'Remembering',
+      'understand':'Understanding','understanding':'Understanding','comprehension':'Understanding',
+      'apply':'Applying','applying':'Applying','application':'Applying',
+      'analyze':'Analyzing','analyse':'Analyzing','analyzing':'Analyzing','analysing':'Analyzing','analysis':'Analyzing',
+      'evaluate':'Evaluating','evaluating':'Evaluating','evaluation':'Evaluating',
+      'create':'Creating','creating':'Creating','synthesis':'Creating','creation':'Creating'
+    };
+    if (bloomMap[n]) return { kind:'bloom', name:bloomMap[n] };
+    var diffMap = {
+      'easy':'Easy','simple':'Easy','low':'Easy','beginner':'Easy',
+      'moderate':'Moderate','medium':'Moderate','average':'Moderate','intermediate':'Moderate',
+      'difficult':'Difficult','hard':'Difficult','high':'Difficult','advanced':'Difficult'
+    };
+    if (diffMap[n]) return { kind:'difficulty', name:diffMap[n] };
+    return { kind:'other', name:titleCase(String(raw).trim()) };
+  }
+
+  function buildBank(rows){
+    var map = mapHeaders(rows[0]);
+    var problems = [];
+    if (!('question' in map)) problems.push('a <code>Question</code> column');
+    var optCount = ['a','b','c','d','e'].filter(function(L){ return L in map; }).length;
+    if (optCount < 2) problems.push('at least two option columns, such as <code>Option A</code> and <code>Option B</code>');
+    if (!('correct' in map)) problems.push('a <code>Correct Answer</code> column');
+    if (problems.length){
+      return { error:'missing-columns', problems:problems, found:rows[0].filter(function(h){ return String(h).trim()!==''; }) };
+    }
+
+    var out = [], sk = { blank:0, fewOptions:0, noAnswer:0, badAnswer:0 };
+    for (var i=1;i<rows.length;i++){
+      var r = rows[i];
+      var qText = String(r[map.question] || '').trim();
+
+      var options = {};
+      LETTERS.forEach(function(L){
+        var key = L.toLowerCase();
+        if (key in map){
+          var v = String(r[map[key]] || '').trim();
+          if (v) options[L] = v;
+        }
+      });
+      var rawCorrect = String(r[map.correct] || '').trim();
+
+      if (!qText){ sk.blank++; continue; }
+      if (Object.keys(options).length < 2){ sk.fewOptions++; continue; }
+      if (!rawCorrect){ sk.noAnswer++; continue; }
+
+      var correct = null;
+      var letterMatch = rawCorrect.match(/^\s*([A-Ea-e])\s*[).:-]?\s*$/);
+      if (letterMatch && options[letterMatch[1].toUpperCase()]){
+        correct = letterMatch[1].toUpperCase();
+      } else {
+        var rc = rawCorrect.toLowerCase().replace(/\s+/g,' ').trim();
+        for (var L in options){
+          if (options[L].toLowerCase().replace(/\s+/g,' ').trim() === rc){ correct = L; break; }
+        }
+        if (!correct){
+          var numMatch = rawCorrect.match(/^\s*([1-5])\s*$/);
+          if (numMatch){
+            var cand = LETTERS[parseInt(numMatch[1],10)-1];
+            if (options[cand]) correct = cand;
+          }
+        }
+      }
+      if (!correct){ sk.badAnswer++; continue; }
+
+      var lvlRaw = ('blooms' in map) ? r[map.blooms] : '';
+      var lvl = canonLevel(lvlRaw || '');
+      var diffRaw = ('difficulty' in map) ? r[map.difficulty] : '';
+      var diff = canonLevel(diffRaw || '');
+
+      out.push({
+        question: qText,
+        options: options,
+        correct: correct,
+        bloom: (lvl && lvl.kind !== 'other') ? lvl.name : (lvl ? lvl.name : null),
+        bloomKind: lvl ? lvl.kind : null,
+        difficulty: diff ? diff.name : null,
+        content: ('content' in map) ? String(r[map.content]||'').trim() : '',
+        objective: ('objectives' in map) ? String(r[map.objectives]||'').trim() : ''
+      });
+    }
+    return { bank: out, skips: sk, hasBloomCol: ('blooms' in map), hasDiffCol: ('difficulty' in map) };
+  }
+  function toBank(rows){
+    var res=buildBank(rows);if(res.error)return res;
+    // tidy: consecutive letters A.. (a blank Option C between B and D would otherwise leave a gap on the bubble sheet)
+    res.bank=res.bank.map(function(q){
+      var ls=Object.keys(q.options).sort(),o={},corr=null;
+      ls.forEach(function(L,i){o[LETTERS[i]]=q.options[L];if(L===q.correct)corr=LETTERS[i]});
+      return {q:q.question,options:o,correct:corr,bloom:q.bloom||'',bloomKind:q.bloomKind||'',difficulty:q.difficulty||'',content:q.content||'',objective:q.objective||''};
+    });
+    return res;
+  }
+  return {parseText:function(text){return parseCSV(text,sniffDelimiter(text))},toBank:toBank,BLOOM_ORDER:BLOOM_ORDER,DIFF_ORDER:DIFF_ORDER};
+})();
+
+/* ---------- banks: one per subject, stored in LIB.banks (synced + backed up) ---------- */
+const QB_LET=['A','B','C','D','E'];
+const bankIdFor=subject=>'bk-'+hash36(normKey(subject||'No subject'));
+const qid=q=>hash36(normKey(q.q)+'|'+Object.keys(q.options).sort().map(k=>normKey(q.options[k])).join('|'));
+function banksList(){LIB.banks=LIB.banks||{};return Object.values(LIB.banks).sort((a,b)=>a.subject.localeCompare(b.subject))}
+function bankLevels(qs){
+  // Bloom's level if the bank has it, else difficulty, else one group — same rule as the builder
+  const hasB=qs.some(q=>q.bloom&&q.bloomKind==='bloom'),hasD=qs.some(q=>q.difficulty);
+  const lv=q=>hasB?(q.bloomKind==='bloom'?q.bloom:'Unlabelled'):hasD?(q.difficulty||'Unlabelled'):'All questions';
+  const order=hasB?QBP.BLOOM_ORDER:hasD?QBP.DIFF_ORDER:['All questions'];
+  const present=[...new Set(qs.map(lv))];
+  const levels=order.filter(l=>present.includes(l)).concat(present.filter(l=>!order.includes(l)));
+  return {kind:hasB?'Bloom’s level':hasD?'Difficulty':'',levels,lv};
+}
+const topicOf=q=>q.content||'Uncategorised';
+
+/* ---------- a test made from a bank lives in S.test ---------- */
+// items = version A (bank order after shuffle, choices as in the bank). vB = {order:[A index per B item], perm:[[original letters in B order]...]}
+function testItems(v){
+  const T=S.test;if(!T)return [];
+  if(v!==1||!T.vB)return T.items;
+  return T.vB.order.map((ai,k)=>{const it=T.items[ai],perm=T.vB.perm[k],o={};let corr=null;
+    perm.forEach((L,j)=>{o[QB_LET[j]]=it.options[L];if(L===it.correct)corr=QB_LET[j]});
+    return Object.assign({},it,{options:o,correct:corr})});
+}
+function testKey(v){return testItems(v).map(it=>QB_LET.indexOf(it.correct))}
+const pinLast=t=>/\b(all|none|both|neither)\s+of\s+the\s+(above|choices|options)\b|^(all|none) (are|is) correct/i.test(String(t||''));
+function shufflePerm(it){
+  const ls=Object.keys(it.options).sort(),free=ls.filter(L=>!pinLast(it.options[L])),fixed=ls.filter(L=>pinLast(it.options[L]));
+  for(let i=free.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[free[i],free[j]]=[free[j],free[i]]}
+  return free.concat(fixed);
+}
+function shuffleArr(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function makeVB(n,items){const order=shuffleArr([...Array(n).keys()]);return {order,perm:order.map(ai=>shufflePerm(items[ai]))}}
+const toGenSet=items=>items.map(it=>({question:it.q,options:it.options,correct:it.correct,level:it.level||'',topic:it.topic||'',objective:it.objective||''}));
+function testMeta(v){const T=S.test;return {title:T.title,seconds:T.seconds,lobbyLine:T.lobby||'Write your name and section. Good luck!',version:versCount()>1?VLET[v]:''}}
+
+/* ---------- the shaded answer-key bubble sheet (any exam with a complete key) ---------- */
+function keySheetPrims(v){
+  const cfg=sheetCfg(v),p=sheetPrims(cfg),g=geo(cfg),key=keyOf(v);
+  const T=tplOf(cfg),X=T?(u=>T.page.x+u):(u=>FR.L+u),Y=T?(w=>T.page.y+w):(w=>FR.T+w);
+  const r=(T?T.cd:g.d)/2*0.82;
+  g.ans.forEach((a,i)=>{const k=key[i];if(k==null||!a.opts[k])return;p.push({t:'circle',cx:X(a.opts[k].u),cy:Y(a.opts[k].v),r,lw:.1,fill:1})});
+  const tag=`ANSWER KEY${versCount()>1?' — VERSION '+VLET[v]:''}`,nm=(S.exam.name||'').toUpperCase();
+  // plain text only: bold letters at print size can look like a corner square to the scanner
+  if(T){const hy=T.head.ys.map(Y);p.push({t:'text',s:tag,x:X(T.head.x0)+34,y:hy[0]+6.4,size:11,align:'left'});if(nm)p.push({t:'text',s:nm,x:X(T.head.x0)+34,y:hy[2]+6.4,size:11,align:'left'})}
+  else{p.push({t:'text',s:tag,x:52,y:9+5.6,size:10,align:'left'});if(nm)p.push({t:'text',s:nm,x:52,y:25+5.6,size:10,align:'left'});if(S.exam.section)p.push({t:'text',s:String(S.exam.section),x:52,y:17+5.6,size:10,align:'left'})}
+  return p;
+}
+function primsPDF(pages){
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'letter'});
+  pages.forEach((prims,pi)=>{if(pi)doc.addPage();doc.setDrawColor(0);doc.setFillColor(0);doc.setTextColor(0);
+    for(const p of prims){
+      if(p.t==='rect'){doc.setLineWidth(p.lw||.3);doc.rect(p.x,p.y,p.w,p.h,p.fill?'F':'S')}
+      else if(p.t==='circle'){doc.setLineWidth(p.lw||.3);doc.circle(p.cx,p.cy,p.r,p.fill?'F':'S')}
+      else if(p.t==='line'){doc.setLineWidth(p.lw);doc.line(p.x1,p.y1,p.x2,p.y2)}
+      else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);doc.text(p.s,p.x,p.y,{align:p.align})}
+    }});
+  return doc.output('arraybuffer');
+}
+function keySheetPDF(){const vs=versCount()>1?[0,1]:[0];return primsPDF(vs.map(keySheetPrims))}
+function dlKeySheet(){
+  if(!window.jspdf){toast('The PDF tool didn’t load. Check your internet and reload.','bad');return}
+  for(let v=0;v<versCount();v++)if(!keyDoneOf(v)){toast(`Finish the ${versCount()>1?'version '+VLET[v]+' ':''}answer key first.`,'bad');return}
+  saveFile(`${safeName(S.exam.name||'Exam')}_answer-key-sheet${versCount()>1?'_A-B':''}.pdf`,keySheetPDF(),'application/pdf');
+}
+
+/* ---------- opening generated pages ---------- */
+function openHTML(html){
+  try{const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const w=window.open(url,'_blank');if(!w){toast('Your browser blocked the new tab. Allow pop-ups for this site, or use Download.','bad');return}setTimeout(()=>URL.revokeObjectURL(url),60000)}
+  catch(e){toast('Could not open the page: '+e.message,'bad')}
+}
+const kitName=(what,v)=>`${safeName(S.test.title||S.exam.name||'Test')}${versCount()>1?'_'+VLET[v]:''}_${what}.html`;
+function kitHTML(what,v){
+  const set=toGenSet(testItems(v)),meta=testMeta(v);
+  if(what==='paper')return buildExam(set,meta);
+  if(what==='key')return buildKey(set,meta,'Answer key'+(meta.version?' — Version '+meta.version:''));
+  if(what==='game')return buildQuizGame(toGenSet(testItems(0)),Object.assign({},meta,{version:''}));
+}
+
+/* ---------- Question banks page ---------- */
+function banksView(){
+  const list=banksList();
+  const subs=[...new Set([...(curTerm()?curTerm().subjects:[]),...list.map(b=>b.subject)])];
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow">Question banks</p><h1>Question banks</h1>
+  <p class="lede">One bank per subject. Upload your questions once, then make tests, printable papers, answer keys, a shaded answer-key sheet and the quiz game from it — the answer key goes straight into Bubble Tsek.</p></div>
+  <div class="toolbar">
+    <label class="field" style="margin:0;min-width:240px"><span class="sr-only">Subject</span><select class="txt" id="qbSubj">${subs.map(s=>`<option ${UI.qbSubj===s?'selected':''}>${esc(s)}</option>`).join('')}<option value="__new">+ Another subject…</option></select></label>
+    <button class="btn primary" data-act="qbUpload">${ICON.up} Upload question bank (CSV or Excel)</button>
+    <button class="btn" data-act="qbTemplate">${ICON.dl} Blank template</button>
+    <button class="btn" data-act="qbSample">${ICON.dl} Filled-in example</button>
+  </div>
+  ${list.length?`<div class="cls-grid">${list.map(b=>{const L=bankLevels(b.questions);return `<button class="cls-card" data-act="qbOpen" data-id="${b.id}"><b>${esc(b.subject)}</b><span>${b.questions.length} questions</span><span class="dim">${L.kind?L.levels.length+' '+(L.kind==='Bloom’s level'?'Bloom’s levels':'levels')+' · ':''}${new Set(b.questions.map(topicOf)).size} topics</span></button>`}).join('')}</div>`
+  :`<div class="card dim">No question banks yet. Choose the subject, then upload your question bank. Columns: Question, Option A–E, Correct Answer, Blooms, Difficulty, Content, Objectives (download the blank template or the example to see).</div>`}
+  <details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">What columns does my file need?</summary>
+  <p class="help">Column names aren’t case-sensitive and common variations work (Answer, Correct, Key…). Option E can be blank. The correct answer can be a letter, a number 1–5 or the exact wording of the right choice.</p>
+  <div class="tbl-wrap"><table><thead><tr><th>Column</th><th>Needed?</th><th>What goes in it</th></tr></thead><tbody>
+  <tr><td>Question</td><td>Yes</td><td>The question text</td></tr><tr><td>Option A … Option E</td><td>At least 2</td><td>The choices</td></tr>
+  <tr><td>Correct Answer</td><td>Yes</td><td>Letter (A–E) or the exact wording</td></tr><tr><td>Blooms</td><td>Recommended</td><td>Remembering … Creating</td></tr>
+  <tr><td>Difficulty</td><td>Optional</td><td>Easy, Moderate, Difficult (used if there’s no Blooms)</td></tr><tr><td>Content</td><td>Optional</td><td>Topic / lesson — lets you pick topics</td></tr><tr><td>Objectives</td><td>Optional</td><td>Learning objective, shown on the answer key</td></tr>
+  </tbody></table></div></details>
+  <div class="actions"><button class="btn" data-act="goClasses">${ICON.back} My classes</button></div>
+  </section>`;
+}
+function bankView(){
+  const b=LIB.banks&&LIB.banks[UI.qbId];if(!b){UI.view='qbanks';return banksView()}
+  const L=bankLevels(b.questions),byL={},byT={};
+  b.questions.forEach(q=>{const l=L.lv(q);byL[l]=(byL[l]||0)+1;const t=topicOf(q);byT[t]=(byT[t]||0)+1});
+  const f=(UI.qbFind||'').trim().toLowerCase();
+  const shown=b.questions.filter(q=>!f||(q.q+' '+Object.values(q.options).join(' ')+' '+q.content).toLowerCase().includes(f));
+  const mx=Math.max(1,...Object.values(byL));
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="qbHome">Question banks</a> › ${esc(b.subject)}</p><h1>${esc(b.subject)}</h1>
+  <p class="lede">${b.questions.length} questions · ${Object.keys(byT).length} topic${Object.keys(byT).length===1?'':'s'}${b.files&&b.files.length?' · from '+b.files.slice(-3).map(esc).join(', '):''}</p></div>
+  <div class="toolbar"><button class="btn primary" data-act="mtStart" data-id="${b.id}" ${b.questions.length?'':'disabled'}>Make a test from this bank</button>
+    <button class="btn" data-act="qbAdd" data-id="${b.id}">${ICON.up} Add more questions</button>
+    <button class="btn" data-act="qbExport" data-id="${b.id}">${ICON.dl} Download bank (CSV)</button>
+    <button class="btn danger" data-act="qbDelete" data-id="${b.id}">Delete bank</button></div>
+  <div class="grid2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin:12px 0">
+   <div class="card"><b>${L.kind?'By '+L.kind:'Questions'}</b>${L.levels.map(l=>`<div style="display:grid;grid-template-columns:120px 1fr 40px;gap:8px;align-items:center;margin-top:8px;font-size:.9rem"><span>${esc(l)}</span><span style="height:9px;background:var(--line);border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:${Math.round(byL[l]/mx*100)}%;background:var(--acc,#2152A3)"></i></span><span class="num">${byL[l]}</span></div>`).join('')}</div>
+   <div class="card"><b>By topic</b>${Object.keys(byT).sort().map(t=>`<div style="display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-size:.9rem"><span>${esc(t)}</span><span class="num">${byT[t]}</span></div>`).join('')}</div>
+  </div>
+  <div class="field" style="max-width:420px"><label for="qbFind">Search questions</label><input class="txt" id="qbFind" value="${esc(UI.qbFind||'')}" placeholder="Type a word…" autocomplete="off"></div>
+  <div class="tbl-wrap" style="max-height:520px"><table><thead><tr><th class="num">#</th><th>Question</th><th class="c">Key</th><th>${esc(L.kind||'Level')}</th><th>Topic</th></tr></thead><tbody>
+  ${shown.slice(0,300).map((q,i)=>`<tr><td class="num dim">${i+1}</td><td style="white-space:normal;min-width:220px">${esc(q.q)}<br><small class="dim">${Object.keys(q.options).sort().map(k=>`${k}) ${esc(q.options[k])}`).join(' · ')}</small></td><td class="c"><b>${q.correct}</b></td><td>${esc(L.lv(q))}</td><td>${esc(topicOf(q))}</td></tr>`).join('')}
+  </tbody></table></div>${shown.length>300?`<p class="help">Showing the first 300 of ${shown.length}. Search to narrow down.</p>`:''}
+  <div class="actions"><button class="btn" data-act="qbHome">${ICON.back} All banks</button><button class="btn primary" data-act="mtStart" data-id="${b.id}" ${b.questions.length?'':'disabled'}>Make a test →</button></div>
+  </section>`;
+}
+
+/* ---------- Make a test ---------- */
+function mtState(){return UI.mt}
+function mtPool(){const m=UI.mt,b=LIB.banks[m.bankId],L=bankLevels(b.questions);return {b,L,pool:b.questions.filter(q=>m.topics[topicOf(q)]!==false)}}
+function mtAvail(){const {L,pool}=mtPool(),a={};L.levels.forEach(l=>a[l]=0);pool.forEach(q=>{const l=L.lv(q);a[l]=(a[l]||0)+1});return a}
+function mtTotal(){return Object.values(UI.mt.counts).reduce((a,b)=>a+(+b||0),0)}
+function makeTestView(){
+  const m=UI.mt;if(!m||!LIB.banks[m.bankId]){UI.view='qbanks';return banksView()}
+  const {b,L}=mtPool(),av=mtAvail(),topics=[...new Set(b.questions.map(topicOf))].sort(),tot=mtTotal();
+  const cls=classesOf(LIB.curTerm).filter(c=>!b.subject||normKey(c.subject)===normKey(b.subject)),allCls=classesOf(LIB.curTerm);
+  const clsList=cls.length?cls:allCls;
+  const schT=TPLS[m.sheet],school=!!schT,err=school&&tot&&tot!==schT.cfg.q?`That school sheet has exactly ${schT.cfg.q} items. Set the total to ${schT.cfg.q}, or pick another sheet.`:'';
+  const prev=m.items?`<div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>Preview · ${m.items.length} items${m.vers>1?' (version A order; B is the same questions shuffled)':''}</b><button class="btn small" data-act="mtShuffle">↻ Reshuffle</button></div>
+    <div class="tbl-wrap" style="max-height:420px;margin-top:10px"><table><tbody>${m.items.map((it,i)=>`<tr><td class="num"><b>${i+1}</b></td><td style="white-space:normal;min-width:200px">${esc(it.q)}<br><small>${Object.keys(it.options).sort().map(k=>k===it.correct?`<b style="color:var(--ok,#1B7A4A)">${k}) ${esc(it.options[k])} ✓</b>`:`<span class="dim">${k}) ${esc(it.options[k])}</span>`).join(' · ')}</small></td><td><small class="dim">${esc(it.level)}${it.topic?'<br>'+esc(it.topic):''}</small></td></tr>`).join('')}</tbody></table></div></div>`:'';
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="qbHome">Question banks</a> › <a href="#" data-act="qbOpen" data-id="${b.id}">${esc(b.subject)}</a> › Make a test</p><h1>Make a test</h1>
+  <p class="lede">Pick how many questions you want. Bubble Tsek chooses them at random, fills in the answer key, and gives you the test paper, keys, bubble sheets and the quiz game.</p></div>
+  <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
+    <div class="field"><label for="mtTitle">Title on the paper and quiz</label><input class="txt" id="mtTitle" data-mt="title" value="${esc(m.title)}" placeholder="e.g. Living in the IT Era — Quiz 7"></div>
+    <div class="field"><label for="mtExam">Exam name (grades sheet column)</label><input class="txt" id="mtExam" data-mt="exam" value="${esc(m.exam)}" placeholder="e.g. QUIZ 7"><p class="help">Same as the column in your grades sheet.</p></div>
+    <div class="field"><label for="mtClass">Class</label><select class="txt" id="mtClass" data-mt="classId"><option value="">Choose later</option>${clsList.map(c=>`<option value="${c.id}" ${m.classId===c.id?'selected':''}>${esc(c.section)}${c.subject?' · '+esc(c.subject):''}</option>`).join('')}</select></div>
+    <div class="field"><label for="mtSec">Seconds per question (quiz game)</label><input class="txt" id="mtSec" data-mt="seconds" type="number" min="0" value="${m.seconds}"><p class="help">0 = no timer.</p></div>
+    <div class="field"><label for="mtLobby">Instructions line (quiz lobby)</label><input class="txt" id="mtLobby" data-mt="lobby" value="${esc(m.lobby)}" placeholder="Write your name and section. Good luck!"></div>
+  </div>
+  <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:6px">
+    <div class="field"><label>Bubble sheet</label><div class="seg">${[['bt','Bubble Tsek sheet']].concat(SCH_LIST.map(T=>[T.id,'School · '+T.cfg.q])).map(([k,l])=>`<button class="${m.sheet===k?'on':''}" data-act="mtSet" data-k="sheet" data-v="${k}">${l}</button>`).join('')}</div></div>
+    <div class="field"><label>Versions</label><div class="seg">${[[1,'One version'],[2,'A and B (same questions, shuffled)']].map(([k,l])=>`<button class="${m.vers===k?'on':''}" data-act="mtSet" data-k="vers" data-v="${k}" ${school&&k===2?'disabled':''}>${l}</button>`).join('')}</div>${school?'<p class="help">The school sheet has no version mark, so it’s one version.</p>':''}</div>
+  </div>
+  ${topics.length>1?`<div class="card" style="margin-top:8px"><b>Topics</b><p class="help">Untick a topic to leave it out.</p><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">${topics.map(t=>`<label class="pill" style="cursor:pointer;gap:6px;display:inline-flex;align-items:center"><input type="checkbox" data-mtt="${esc(t)}" ${m.topics[t]!==false?'checked':''}> ${esc(t)}</label>`).join('')}</div></div>`:''}
+  <div class="card" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>How many from each ${L.kind?esc(L.kind):'group'}?</b>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small" data-act="mtFill" data-k="even">Even spread</button><button class="btn small" data-act="mtFill" data-k="all">Use everything</button><button class="btn small" data-act="mtFill" data-k="clear">Clear all</button></div></div>
+    ${L.levels.map(l=>`<div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)"><div><b>${esc(l)}</b><br><small class="dim">${av[l]||0} available</small></div>
+      <div class="spin" style="max-width:160px"><button type="button" data-act="mtCount" data-l="${esc(l)}" data-d="-1" aria-label="Fewer ${esc(l)}">−</button><input type="number" min="0" max="${av[l]||0}" value="${m.counts[l]||0}" data-mtc="${esc(l)}" aria-label="${esc(l)} questions"><button type="button" data-act="mtCount" data-l="${esc(l)}" data-d="1" aria-label="More ${esc(l)}">+</button></div></div>`).join('')}
+    <div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:700"><span>Total questions</span><span id="mtTot">${tot}</span></div></div>
+  ${err?`<div class="alert warn">${err}</div>`:''}
+  <div class="actions"><button class="btn" data-act="qbOpen" data-id="${b.id}">${ICON.back} Back</button>
+    <button class="btn ${m.items?'':'primary'}" data-act="mtGenerate" ${tot&&!err?'':'disabled'}>${m.items?'↻ Pick again with these numbers':'Generate & preview'}</button>
+    ${m.items?`<button class="btn primary" data-act="mtCreate" ${err?'disabled':''}>Create the exam →</button>`:''}</div>
+  ${prev}
+  </section>`;
+}
+function mtGenerate(){
+  const m=UI.mt,{L,pool}=mtPool();let set=[];
+  L.levels.forEach(l=>{const n=+m.counts[l]||0;if(!n)return;set=set.concat(shuffleArr(pool.filter(q=>L.lv(q)===l)).slice(0,n))});
+  m.items=shuffleArr(set).map(q=>({q:q.q,options:Object.assign({},q.options),correct:q.correct,level:L.lv(q),topic:q.content||'',objective:q.objective||'',qid:q.id}));
+}
+function mtCreate(){
+  const m=UI.mt;if(!m.items||!m.items.length)return;
+  const n=m.items.length,opt=Math.max(2,...m.items.map(it=>Object.keys(it.options).length));
+  const schT=TPLS[m.sheet];if(schT&&(n!==schT.cfg.q||opt>5)){toast(`That school sheet needs exactly ${schT.cfg.q} items with up to 5 choices.`,'bad');return}
+  const g={};GLOBAL_KEYS.forEach(k=>g[k]=S[k]);persist();
+  S=Object.assign(newExamState(m.classId||null),g);
+  S.cfg=schT?Object.assign({},schT.cfg,{mc:1,mi:0,tpl:schT.id}):{roll:S.cfg.roll||3,q:n,opt,mc:1,mi:0};
+  S.vers=schT?1:m.vers;
+  S.test={bankId:m.bankId,title:m.title||m.exam||'Test',seconds:Math.max(0,+m.seconds||0),lobby:m.lobby||'',items:m.items.map(it=>Object.assign({},it)),vB:S.vers>1?makeVB(n,m.items):null,made:Date.now()};
+  S.key=testKey(0);S.keyB=S.vers>1?testKey(1):Array(n).fill(null);S.keyFrom='question bank';
+  S.exam.name=(m.exam||m.title||'').trim();S.sheetReady=true;
+  if(m.classId)syncClass();
+  S.step=1;UI.view='exam';UI.keyVer=0;persist();render();window.scrollTo({top:0});
+  setTimeout(()=>testKitModal(),120);
+}
+
+/* ---------- Test kit ---------- */
+function testKitModal(){
+  if(!S.test){toast('This exam wasn’t made from a question bank.','bad');return}
+  const vs=versCount()>1?[0,1]:[0],school=isOld(S.cfg),schT=tplOf(S.cfg);
+  const row=(icon,title,desc,btns)=>`<div class="card" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><div style="max-width:52ch"><b>${icon} ${title}</b><p class="help" style="margin:2px 0 0">${desc}</p></div><div style="display:flex;gap:6px;flex-wrap:wrap">${btns}</div></div>`;
+  const perV=(what,label)=>vs.map(v=>`<button class="btn small" data-act="kitOpen" data-w="${what}" data-v="${v}">${label}${vs.length>1?' '+VLET[v]:''}</button><button class="btn small" data-act="kitSave" data-w="${what}" data-v="${v}" aria-label="Download ${label}${vs.length>1?' '+VLET[v]:''}">${ICON.dl}</button>`).join('');
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Test kit</p><h2 style="margin:0">${esc(S.test.title)}</h2><p class="dim" style="margin:4px 0 12px">${S.test.items.length} items · ${school?schT.cfg.q+'-item school sheet':'Bubble Tsek sheet'}${vs.length>1?' · versions A and B (same questions, shuffled)':''}${S.exam.section?' · '+esc(S.exam.section):''}</p></div><button class="btn small" data-act="closeModal">Close</button></div>
+  ${row('📄','Test paper','Numbered to match the bubble sheet. Opens in a new tab — press Print (Letter, 100%).',perV('paper','Open'))}
+  ${row('🟢','Blank bubble sheets',school?`Use your school ${schT.cfg.q}-item sheets, or print copies here.`:`One page per version${vs.length>1?' (A then B)':''}. Print as many as you need.`,`<button class="btn small" data-act="dlSheet">${ICON.dl} PDF</button>`)}
+  ${row('⚫','Answer key — shaded bubble sheet','The correct answers already shaded. Keep it as your teacher copy, or lay it over a student sheet to check by hand.',`<button class="btn small" data-act="dlKeySheet">${ICON.dl} PDF</button>`)}
+  ${row('🔑','Answer key — list','Every question with its answer, level and topic. Teacher copy.',perV('key','Open'))}
+  ${row('🎮','Quiz game','Lobby, timer, pause, answers hidden until the teacher shows results. Play it on the classroom screen, or download the file for students.',`<button class="btn small primary" data-act="kitOpen" data-w="game" data-v="0">▶ Play now</button><button class="btn small" data-act="kitSave" data-w="game" data-v="0">${ICON.dl} Download</button>`)}
+  <p class="help" style="margin-top:8px">The answer key is already in this exam${vs.length>1?' (both versions)':''}. Next: choose the class if you haven’t, print, give the test, then scan.</p>`,{wide:true});
+}
+
+/* ---------- item text for analyses ---------- */
+function itemInfo(i,v){const it=testItems(v||0)[i];return it?{q:it.q,level:it.level,topic:it.topic}:null}
+
+/* ---------- actions ---------- */
+Object.assign(ACT,{
+  goBanks:()=>{UI.view='qbanks';render();window.scrollTo({top:0})},
+  qbHome:()=>{UI.view='qbanks';render()},
+  qbOpen:b=>{UI.qbId=b.dataset.id;UI.qbFind='';UI.view='qbank';render();window.scrollTo({top:0})},
+  qbTemplate:()=>saveFile('question-bank-template.csv','﻿'+TEMPLATE_CSV,'text/csv'),
+  qbSample:()=>saveFile('question-bank-example.csv','﻿'+SAMPLE_CSV,'text/csv'),
+  qbUpload:()=>{const sel=$('#qbSubj');let s=sel?sel.value:'';
+    if(s==='__new'){s=(prompt('Subject name (e.g. LIVING IN THE IT ERA)')||'').trim();if(!s)return}
+    UI.qbTarget=s;$('#fileBank').value='';$('#fileBank').click()},
+  qbAdd:b=>{const bk=LIB.banks[b.dataset.id];if(!bk)return;UI.qbTarget=bk.subject;$('#fileBank').value='';$('#fileBank').click()},
+  qbExport:b=>{const bk=LIB.banks[b.dataset.id];if(!bk)return;
+    const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const rows=['Question,Option A,Option B,Option C,Option D,Option E,CORRECT ANSWER,DIFFICULTY,BLOOMS,CONTENT,OBJECTIVES'].concat(bk.questions.map(x=>[x.q,x.options.A,x.options.B,x.options.C,x.options.D,x.options.E,x.correct,x.difficulty,x.bloomKind==='bloom'?x.bloom:'',x.content,x.objective].map(q).join(',')));
+    saveFile(`question-bank_${safeName(bk.subject)}.csv`,'﻿'+rows.join('\r\n'),'text/csv')},
+  qbDelete:b=>{const bk=LIB.banks[b.dataset.id];if(!bk)return;
+    confirmBox('Delete this question bank?',`${esc(bk.subject)}: ${bk.questions.length} questions. Exams already made from it keep their questions.`,[{label:'Delete bank',cls:'danger',fn:()=>{delete LIB.banks[bk.id];libSave();UI.view='qbanks';render();toast('Bank deleted')}}])},
+  mtStart:b=>{const bk=LIB.banks[b.dataset.id];if(!bk)return;const L=bankLevels(bk.questions),counts={};L.levels.forEach(l=>counts[l]=0);
+    UI.mt={bankId:bk.id,title:'',exam:'',classId:'',seconds:40,lobby:'',sheet:'bt',vers:1,topics:{},counts,items:null};UI.view='maketest';render();window.scrollTo({top:0})},
+  mtSet:b=>{const m=UI.mt,k=b.dataset.k;m[k]=k==='vers'?+b.dataset.v:b.dataset.v;
+    const T=TPLS[m.sheet];if(T){m.vers=1;if(mtTotal()!==T.cfg.q){ACT.mtFill({dataset:{k:'fit',n:T.cfg.q}});return}}render()},
+  mtTopic:b=>{UI.mt.topics[b.dataset.mtt]=b.checked;const av=mtAvail();Object.keys(UI.mt.counts).forEach(l=>UI.mt.counts[l]=Math.min(UI.mt.counts[l],av[l]||0));UI.mt.items=null;render()},
+  mtCount:b=>{const m=UI.mt,l=b.dataset.l,av=mtAvail();m.counts[l]=Math.max(0,Math.min(av[l]||0,(+m.counts[l]||0)+(+b.dataset.d)));m.items=null;render()},
+  mtFill:b=>{const m=UI.mt,av=mtAvail(),ls=Object.keys(av).filter(l=>av[l]>0),k=b.dataset.k;
+    if(k==='clear')ls.forEach(l=>m.counts[l]=0);
+    else if(k==='all')ls.forEach(l=>m.counts[l]=av[l]);
+    else{const want=k==='fit'?+b.dataset.n:Math.min(Object.values(av).reduce((a,x)=>a+x,0),Math.max(10,mtTotal()||20));Object.keys(m.counts).forEach(l=>m.counts[l]=0);
+      let left=want,guard=0;while(left>0&&guard++<500){let moved=false;for(const l of ls){if(left<=0)break;if(m.counts[l]<av[l]){m.counts[l]++;left--;moved=true}}if(!moved)break}}
+    m.items=null;render()},
+  mtGenerate:()=>{mtGenerate();render();setTimeout(()=>{const p=document.querySelector('[data-act=mtCreate]');if(p)p.scrollIntoView({behavior:'smooth',block:'center'})},50)},
+  mtShuffle:()=>{mtGenerate();render()},
+  mtCreate:()=>mtCreate(),
+  testKit:()=>testKitModal(),
+  dlKeySheet:()=>dlKeySheet(),
+  kitOpen:b=>{const html=kitHTML(b.dataset.w,+b.dataset.v);if(html)openHTML(html)},
+  kitSave:b=>{const w=b.dataset.w,v=+b.dataset.v,html=kitHTML(w,v);if(!html)return;saveFile(kitName({paper:'test-paper',key:'answer-key',game:'quiz-game'}[w],v),html,'text/html')},
+});
+// typing in the Make-a-test fields and the bank search
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset&&t.dataset.mt&&UI.mt){UI.mt[t.dataset.mt]=t.value;return}
+  if(t.dataset&&t.dataset.mtc!=null&&UI.mt){const av=mtAvail(),l=t.dataset.mtc;UI.mt.counts[l]=Math.max(0,Math.min(av[l]||0,+t.value||0));UI.mt.items=null;const x=$('#mtTot');if(x)x.textContent=mtTotal();return}
+  if(t.id==='qbFind'){UI.qbFind=t.value;clearTimeout(UI.qbT);UI.qbT=setTimeout(()=>{const pos=t.selectionStart;render();const n=$('#qbFind');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}},250)}
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset&&t.dataset.mt==='classId'&&UI.mt){UI.mt.classId=t.value}
+  if(t.dataset&&t.dataset.mtc!=null&&UI.mt)render();
+  if(t.dataset&&t.dataset.mtt!=null&&UI.mt)ACT.mtTopic(t);
+  if(t.dataset&&t.dataset.bank){UI.bank=UI.bank||{};UI.bank[t.dataset.bank]=t.dataset.bank==='min'?+t.value:t.value;if(t.dataset.bank==='term')UI.bank.classId='';render()}
+  if(t.id==='qbSubj'&&t.value!=='__new')UI.qbSubj=t.value;
+});
+(function(){
+  const inp=document.createElement('input');inp.type='file';inp.id='fileBank';inp.hidden=true;inp.accept='.csv,.txt,.tsv,.xlsx,.xls,text/csv';document.body.appendChild(inp);
+  inp.addEventListener('change',async e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    try{
+      let rows;
+      if(/\.xlsx?$/i.test(f.name))rows=await readRows(f);
+      else rows=QBP.parseText(await f.text());
+      if(!rows||rows.length<2)throw new Error('This file has no questions in it — only a heading row, or nothing at all.');
+      const res=QBP.toBank(rows);
+      if(res.error)throw new Error('Some columns are missing: '+res.problems.join(', ').replace(/<[^>]+>/g,'')+'. Columns found: '+res.found.join(', ')+'.');
+      if(!res.bank.length)throw new Error('No complete questions were found. Each row needs a question, at least two options and the correct answer.');
+      const subject=UI.qbTarget||'No subject',id=bankIdFor(subject);LIB.banks=LIB.banks||{};
+      const qs=res.bank.map(q=>Object.assign(q,{id:qid(q)}));
+      const sk=res.skips,skipped=sk.blank+sk.fewOptions+sk.noAnswer+sk.badAnswer;
+      const finish=mode=>{
+        const old=LIB.banks[id];let added=0;
+        if(!old||mode==='replace'){LIB.banks[id]={id,subject:old?old.subject:subject,questions:qs,files:[f.name],updatedAt:Date.now()};added=qs.length}
+        else{const have=new Set(old.questions.map(q=>q.id));qs.forEach(q=>{if(!have.has(q.id)){old.questions.push(q);have.add(q.id);added++}});old.files=(old.files||[]).concat(f.name);old.updatedAt=Date.now()}
+        libSave();UI.qbId=id;UI.view='qbank';render();
+        alertBox('Question bank ready',[`${added} question${added===1?'':'s'} ${mode==='add'?'added to':'in'} ${subject}.`].concat(skipped?[`${skipped} row${skipped===1?' was':'s were'} skipped (no question, fewer than 2 options, or no/unknown correct answer).`]:[]),'ok');
+      };
+      if(LIB.banks[id]&&LIB.banks[id].questions.length)confirmBox('Add to the existing bank?',`${esc(subject)} already has ${LIB.banks[id].questions.length} questions. The file has ${qs.length}.`,[{label:'Add new questions',cls:'primary',fn:()=>finish('add')},{label:'Replace the bank',cls:'danger',fn:()=>finish('replace')}]);
+      else finish('replace');
+    }catch(err){alertBox('We couldn’t use that file',[String(err&&err.message||err)])}
+  });
+})();
+
+
+/* ---------- item bank v2: question text, Bloom's level & topic; A+B combined for bank-made tests ---------- */
+function examItemRows(rec){
+  const d=rec.data;if(!d||!d.results||!d.cfg||!d.key)return [];
+  const c=getClass(d.classId),t=termOf(d.termId),vers=Math.max(1,Math.min(2,d.vers||1));
+  const base={examId:rec.id,exam:d.exam.name||(d.test&&d.test.title)||'Untitled exam',date:d.exam.date||'',subject:c?c.subject:(d.exam.subject||''),section:c?c.section:(d.exam.section||''),classId:d.classId,termId:d.termId,term:t?t.name:''};
+  const rs=Object.values(d.results);if(!rs.length)return [];
+  const out=[];
+  const finish=(i,key,cnt,right,blank,multi,n,extra)=>{
+    if(!n)return;let worst=-1;cnt.forEach((x,o)=>{if(o!==key&&(worst<0||x>cnt[worst]))worst=o});
+    out.push(Object.assign({},base,{item:i+1,key:LET[key],n,right,wrong:n-right,blank,multi,pct:Math.round((n-right)/n*100),worst:worst>=0&&cnt[worst]?LET[worst]+' ('+cnt[worst]+')':'—'},extra));
+  };
+  if(d.test&&d.test.items&&d.test.items.length===d.cfg.q){
+    // one row per question; version B answers are translated back to the A numbering and lettering
+    const T=d.test,vB=T.vB,posB={};if(vB)vB.order.forEach((ai,k)=>posB[ai]=k);
+    T.items.forEach((it,ai)=>{
+      const key=QB_LET.indexOf(it.correct),cnt=Array(d.cfg.opt).fill(0);let right=0,blank=0,multi=0,n=0;
+      rs.forEach(r=>{const v=r.ver||0;let a;
+        if(v===1&&vB){const k=posB[ai];a=((r.ans&&r.ans[k])||[]).map(j=>QB_LET.indexOf(vB.perm[k][j]))}
+        else a=(r.ans&&r.ans[ai])||[];
+        n++;if(!a.length)blank++;else if(a.length>1)multi++;else{if(a[0]>=0&&a[0]<cnt.length)cnt[a[0]]++;if(a[0]===key)right++}});
+      finish(ai,key,cnt,right,blank,multi,n,{vers,ver:vers>1?'A+B':'',itemB:vB?posB[ai]+1:null,q:it.q,level:it.level||'',topic:it.topic||''});
+    });
+    return out;
+  }
+  for(let v=0;v<vers;v++){
+    const key=(v===1?d.keyB:d.key)||[],vr=rs.filter(r=>(r.ver||0)===v);if(!vr.length||key.length<d.cfg.q)continue;
+    for(let i=0;i<d.cfg.q;i++){const cnt=Array(d.cfg.opt).fill(0);let right=0,blank=0,multi=0;
+      vr.forEach(r=>{const a=(r.ans&&r.ans[i])||[];if(!a.length)blank++;else if(a.length>1)multi++;else{cnt[a[0]]++;if(a[0]===key[i])right++}});
+      finish(i,key[i],cnt,right,blank,multi,vr.length,{vers,ver:vers>1?VLET[v]:'',q:'',level:'',topic:''})}
+  }
+  return out;
+}
+function itemBankRows(){
+  const f=UI.bank||{};let rows=[];
+  Object.values(LIB.exams).forEach(x=>{if(f.term&&x.data.termId!==f.term)return;rows=rows.concat(examItemRows(x))});
+  if(f.subject)rows=rows.filter(r=>r.subject===f.subject);
+  if(f.classId)rows=rows.filter(r=>r.classId===f.classId);
+  if(f.level)rows=rows.filter(r=>r.level===f.level);
+  if(f.topic)rows=rows.filter(r=>r.topic===f.topic);
+  const min=f.min==null?5:f.min;rows=rows.filter(r=>r.n>=min);
+  rows.sort((a,b)=>b.pct-a.pct||b.n-a.n||a.item-b.item);
+  return rows;
+}
+function bankSummary(rows,key){
+  const g={};rows.forEach(r=>{const k=r[key];if(!k)return;const o=g[k]||(g[k]={k,items:0,n:0,wrong:0});o.items++;o.n+=r.n;o.wrong+=r.wrong});
+  const order=key==='level'?QBP.BLOOM_ORDER.concat(QBP.DIFF_ORDER):[];
+  return Object.values(g).map(o=>Object.assign(o,{pct:o.n?Math.round(o.wrong/o.n*100):0})).sort((a,b)=>order.length&&order.includes(a.k)&&order.includes(b.k)?order.indexOf(a.k)-order.indexOf(b.k):b.pct-a.pct);
+}
+function itemBankView(){
+  const f=UI.bank=UI.bank||{term:LIB.curTerm,subject:'',classId:'',min:5,limit:50,level:'',topic:''};
+  const all=(()=>{const keep={level:f.level,topic:f.topic};f.level='';f.topic='';const r=itemBankRows();Object.assign(f,keep);return r})();
+  const rows=itemBankRows(),shown=rows.slice(0,f.limit||50);
+  const subjects=[...new Set(Object.values(LIB.exams).map(x=>{const c=getClass(x.data.classId);return c?c.subject:''}).filter(Boolean))];
+  const classes=classesOf(f.term||LIB.curTerm),levels=[...new Set(all.map(r=>r.level).filter(Boolean))],topics=[...new Set(all.map(r=>r.topic).filter(Boolean))].sort();
+  const hard=rows.filter(r=>r.pct>=50).length,byL=bankSummary(all,'level'),byT=bankSummary(all,'topic');
+  const sel=(id,k,label,opts)=>`<div class="field"><label for="${id}">${label}</label><select class="txt" id="${id}" data-bank="${k}">${opts}</select></div>`;
+  const sumTbl=(title,list)=>list.length?`<div class="card"><b>${title}</b><div class="tbl-wrap" style="margin-top:6px"><table><thead><tr><th></th><th class="num">Items</th><th class="num">Wrong</th></tr></thead><tbody>${list.map(o=>`<tr><td>${esc(o.k)}</td><td class="num">${o.items}</td><td class="num"><b>${o.pct}%</b></td></tr>`).join('')}</tbody></table></div></div>`:'';
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="goClasses">My classes</a> › Item bank</p>
+    <h1>Item bank</h1><p class="lede">Every scanned item, hardest first. Tests made from a question bank show the question, its Bloom’s level and topic, with versions A and B counted together.</p></div>
+  <div class="fields" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+    ${sel('bkTerm','term','Semester',LIB.terms.map(t=>`<option value="${t.id}" ${f.term===t.id?'selected':''}>${esc(t.name)}${t.archived?' (past)':''}</option>`).join('')+`<option value="" ${f.term?'':'selected'}>All semesters</option>`)}
+    ${sel('bkSubj','subject','Subject','<option value="">All subjects</option>'+subjects.map(s=>`<option value="${esc(s)}" ${f.subject===s?'selected':''}>${esc(s)}</option>`).join(''))}
+    ${sel('bkCls','classId','Class','<option value="">All classes</option>'+classes.map(c=>`<option value="${c.id}" ${f.classId===c.id?'selected':''}>${esc(c.section)}</option>`).join(''))}
+    ${levels.length?sel('bkLvl','level','Bloom’s level','<option value="">All levels</option>'+levels.map(l=>`<option ${f.level===l?'selected':''}>${esc(l)}</option>`).join('')):''}
+    ${topics.length?sel('bkTop','topic','Topic','<option value="">All topics</option>'+topics.map(l=>`<option ${f.topic===l?'selected':''}>${esc(l)}</option>`).join('')):''}
+    ${sel('bkMin','min','Least sheets scanned',[1,5,10,20].map(m=>`<option value="${m}" ${(+f.min||5)===m?'selected':''}>${m}+</option>`).join(''))}
+  </div>
+  <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0">
+    <div class="tile"><small>Items listed</small><b>${rows.length}</b></div>
+    <div class="tile"><small>Half the class missed</small><b>${hard}</b></div>
+    <div class="tile"><small>Exams included</small><b>${new Set(rows.map(r=>r.examId)).size}</b></div>
+  </div>
+  ${byL.length||byT.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:14px">${sumTbl('Most missed by Bloom’s level',byL)}${sumTbl('Most missed by topic',byT.slice(0,10))}</div>`:''}
+  ${rows.length?`<div class="tbl-wrap"><table><thead><tr><th class="num">Wrong</th><th>Question</th><th>Exam</th><th class="num">Item</th><th class="c">Key</th><th class="c">Most chosen wrong</th><th class="num">Sheets</th><th></th></tr></thead><tbody>
+  ${shown.map(r=>`<tr><td class="num"><b>${r.pct}%</b></td><td style="min-width:220px">${r.q?esc(r.q):'<span class="dim">—</span>'}${r.level||r.topic?`<br><small class="dim">${esc(r.level)}${r.level&&r.topic?' · ':''}${esc(r.topic)}</small>`:''}</td>
+    <td>${esc(r.exam)}${r.ver?` <span class="pill">${r.ver}</span>`:''}<br><small class="dim">${esc(r.section)} · ${esc(r.date)}</small></td>
+    <td class="num"><b>${r.item}</b>${r.itemB?`<br><small class="dim">B: ${r.itemB}</small>`:''}</td><td class="c">${r.key||''}</td><td class="c">${esc(r.worst)}</td><td class="num">${r.n}</td>
+    <td><button class="btn small" data-act="bankOpen" data-id="${r.examId}" data-v="0">Open</button></td></tr>`).join('')}
+  </tbody></table></div>
+  ${rows.length>shown.length?`<div class="actions"><button class="btn" data-act="bankMore">Show 50 more (${rows.length-shown.length} left)</button></div>`:''}`
+  :`<div class="card dim">No items yet with that many scanned sheets. Lower “Least sheets scanned”, or scan an exam first.</div>`}
+  <div class="actions"><button class="btn" data-act="goClasses">${ICON.back} My classes</button><button class="btn primary" data-act="bankExcel" ${rows.length?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Item bank (Excel)</button></div>
+  </section>`;
+}
+function bankExcelBytes(rows){
+  const head=['WRONG %','QUESTION','BLOOMS','TOPIC','EXAM','VERSION','DATE','SUBJECT','SECTION','ITEM','ITEM (B)','ANSWER KEY','MOST CHOSEN WRONG','SHEETS','CORRECT','WRONG','BLANK','2+ ANSWERS'];
+  const body=rows.map(r=>[r.pct,r.q||'',r.level||'',r.topic||'',r.exam,r.ver||'',r.date,r.subject,r.section,r.item,r.itemB||'',r.key||'',r.worst,r.n,r.right,r.wrong,r.blank,r.multi]);
+  const ws=XLSX.utils.aoa_to_sheet([head,...body]);
+  ws['!cols']=[{wch:9},{wch:60},{wch:14},{wch:24},{wch:18},{wch:9},{wch:12},{wch:24},{wch:12},{wch:6},{wch:8},{wch:11},{wch:19},{wch:8},{wch:9},{wch:8},{wch:8},{wch:12}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'item bank');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+
+if(NATIVE){const qb=document.getElementById("btnBanks");if(qb)qb.hidden=true}
 
 
 if(S.key.length!==S.cfg.q)fitKey();
