@@ -245,6 +245,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
+const APP_VER='14';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -789,7 +790,7 @@ return `<section class="panel">
     <button class="btn" data-act="pickKey">${ICON.up} Upload CSV file</button>
     <button class="btn" data-act="scanKey">${ICON.cam} Scan shaded answer sheet</button>
     <button class="btn" data-act="dlKeyTpl">${ICON.dl} Download CSV template</button>
-    <button class="btn" data-act="dlKeySheet" ${keyComplete()?'':'disabled'} title="Answer key printed as a shaded bubble sheet">${ICON.dl} Answer key sheet (shaded, PDF)</button>
+    <button class="btn" data-act="dlKeySheet" title="Answer key printed as a shaded bubble sheet">${ICON.dl} Answer key sheet (shaded, PDF)</button>
     ${S.test&&!NATIVE?`<button class="btn primary" data-act="testKit">Test kit: paper, keys, quiz game</button>`:''}
   </div>
   ${UI.keyErr?`<div class="alert bad"><b>This answer key doesn’t fit your bubble sheet.</b><ul>${UI.keyErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${UI.keyErr.length>8?`<li>…and ${UI.keyErr.length-8} more</li>`:''}</ul></div>`:''}
@@ -1120,6 +1121,7 @@ function resultsView(){
   <div class="big-actions">
     ${NATIVE?`<button class="btn primary" data-act="shareExcel" ${st.n?'':'disabled'}>${ICON.share} Share results (Excel)</button>`:`<button class="btn primary" data-act="dlExcel" ${st.n?'':'disabled'}>${ICON.dl} Download results (Excel)</button>`}
     <button class="btn" data-act="chartsExcel" ${st.n?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Charts (Excel)</button>
+    <button class="btn" data-act="dlKeySheet">${NATIVE?ICON.share:ICON.dl} Answer key sheet</button>
     <button class="btn" data-act="report" ${st.n?'':'disabled'}>${ICON.ext} View report</button>
     <button class="btn" data-act="tab" data-t="student">Analysis by student response</button>
     <button class="btn" data-act="tab" data-t="option">Analysis by option response</button>
@@ -2217,7 +2219,7 @@ async function restoreBackup(file,mode){
 }
 function backupPanel(){
   const n=Object.keys(LIB.picMeta||{}).length;
-  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Backup</p><h2 style="margin:0">Backup &amp; restore</h2></div><button class="btn small" data-act="closeModal">Close</button></div>
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Backup · app version ${APP_VER}</p><h2 style="margin:0">Backup &amp; restore</h2></div><button class="btn small" data-act="closeModal">Close</button></div>
   <p class="dim" style="max-width:62ch">A backup file keeps your classes, exams, answer keys and scores — even if this phone is lost or the app is cleared. Save it to Google Drive or your computer.</p>
   <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0"><div class="tile"><small>Classes</small><b style="font-size:1.05rem">${LIB.classes.length}</b></div><div class="tile"><small>Exams</small><b style="font-size:1.05rem">${Object.keys(LIB.exams).length}</b></div><div class="tile"><small>Pictures</small><b style="font-size:1.05rem">${n}</b></div></div>
   <div class="card" style="margin-bottom:10px"><b>Save a backup</b><p class="help">Scores only is small and quick. With pictures can be very large (about ${Math.max(1,Math.round(n*0.12))} MB here).</p>
