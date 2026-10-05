@@ -245,7 +245,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
-const APP_VER='14';
+const APP_VER='15';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -841,7 +841,8 @@ function scanSide(){
   return `<div class="card"><small class="dim">Scores saved</small><div class="big">${saved}<span class="dim" style="font-size:1rem;font-weight:500"> of ${total}</span></div><div class="bar"><i style="width:${total?saved/total*100:0}%"></i></div></div>
   <div class="card">
     <div class="tgl-row"><div><b>Auto-save</b><p class="help">Good sheets save by themselves. Sheets that need checking still stop and ask.</p></div><button class="tgl ${S.autoSave?'on':''}" role="switch" aria-checked="${!!S.autoSave}" aria-label="Auto-save" data-act="tglAuto"><i></i></button></div>
-    <div class="tgl-row"><div><b>Beep sound</b><p class="help">High beep = saved. Low double beep = needs checking.</p></div><button class="tgl ${S.sound!==false?'on':''}" role="switch" aria-checked="${S.sound!==false}" aria-label="Beep sound" data-act="tglSound"><i></i></button></div>
+    <div class="tgl-row"><div><b>Mark the saved picture</b><p class="help">Green = correct, red = wrong, dashed = the right answer. Students see this picture in Score Lookup.</p></div><button class="tgl ${markPicsOn()?'on':''}" role="switch" aria-checked="${markPicsOn()}" aria-label="Mark the saved picture" data-act="tglMarks"><i></i></button></div>
+  <div class="tgl-row"><div><b>Beep sound</b><p class="help">High beep = saved. Low double beep = needs checking.</p></div><button class="tgl ${S.sound!==false?'on':''}" role="switch" aria-checked="${S.sound!==false}" aria-label="Beep sound" data-act="tglSound"><i></i></button></div>
   </div>
   <div class="card"><small class="dim" style="display:block;margin-bottom:8px">Mark detection</small>
   <div class="seg" role="group" aria-label="Mark detection">${[[1,'Light marks'],[2,'Normal'],[3,'Strict']].map(([v,l])=>`<button class="${S.sens===v?'on':''}" data-act="sens" data-v="${v}">${l}</button>`).join('')}</div>
@@ -1129,7 +1130,7 @@ function resultsView(){
   <div class="tabs" role="tablist">${[['scores','Scores'],['student','Analysis by student response'],['option','Analysis by option response']].map(([t,l])=>`<button class="tab ${S.tab===t?'on':''}" role="tab" aria-selected="${S.tab===t}" data-act="tab" data-t="${t}">${l}</button>`).join('')}</div>
   <div id="tabBody">${body}</div>
   <p class="help" style="margin-top:12px">Excel file: <span class="mono">${esc(baseName())}.xlsx</span></p>
-  <p class="help" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span id="picCount"></span><button class="btn small danger" id="picDelAll" data-act="picDelAll" hidden>Delete all pictures</button></p>
+  <p class="help" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span id="picCount"></span><button class="btn small" data-act="remarkPics">Mark answers on saved pictures</button><button class="btn small danger" id="picDelAll" data-act="picDelAll" hidden>Delete all pictures</button></p>
   <div class="actions"><button class="btn" data-act="go" data-i="4">${ICON.cam} Back to scanning</button><button class="btn" data-act="newExam">Start a new exam</button></div>
   </section>`;
 }
@@ -1203,6 +1204,7 @@ const ACT={
   resDiscard:()=>{const cur=UI.cur,sig=cur.sig;if(cur.autoSaved){delete S.results[cur.savedRoll];picDel(cur.savedRoll);persist();refreshSide()}
     closeModal();camResume(sig);toast(cur.autoSaved?'Score removed. Move the sheet away before scanning it again.':'Discarded. Move the sheet away before scanning it again.')},
   tglAuto:()=>{S.autoSave=!S.autoSave;persist();refreshSide();toast(S.autoSave?'Auto-save is on. Sheets that need checking will still stop.':'Auto-save is off. You will confirm each sheet.')},
+  tglMarks:()=>{S.markPics=!markPicsOn();persist();refreshSide();},
   tglSound:()=>{S.sound=S.sound===false;persist();refreshSide();if(S.sound){audioUnlock();beep('ok')}},
   apUndo:()=>{if(!UI.ap)return;const cur=UI.ap.cur;hideAutoPop();UI.ap=null;delete S.results[cur.savedRoll];picDel(cur.savedRoll);persist();refreshSide();
     toast('Undone. The score was not saved.');camResume(cur.sig)},
@@ -1292,7 +1294,7 @@ const KNOWN_SECTIONS=['BSA 1C','BSAIS 1A','BSBA-MM2C','BSP 3A','BSP 3B','BSP 3C'
 const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const normKey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 const rollKey=r=>String(r).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
-const GLOBAL_KEYS=['sens','autoSave','sound'];
+const GLOBAL_KEYS=['sens','autoSave','sound','markPics'];
 const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB','vers','test','keyFrom','exam','students','listName','results','tab'];
 
 let LIB=null;
@@ -1711,6 +1713,7 @@ Object.assign(ACT,{
   viewPic:b=>viewPic(b.dataset.r),
   picShare:async()=>{const v=UI.picView;if(!v)return;const buf=await v.blob.arrayBuffer();shareOrSave(v.name,buf,'image/jpeg',v.name.replace(/\.jpg$/,''))},
   picDelete:()=>{const v=UI.picView;if(!v)return;picDel(v.roll);closeModal();toast('Picture deleted');setTimeout(refreshPicCount,200)},
+  remarkPics:()=>remarkPics(),
   picDelAll:()=>confirmBox('Delete all pictures for this exam?','Scores stay saved. Only the scanned pictures are removed from this device.',[{label:'Delete pictures',cls:'danger',fn:async()=>{const n=await PicDB.delPrefix(S.id+'|').catch(()=>0);toast(`${n} picture${n===1?'':'s'} deleted`);refreshPicCount()}}]),
   chartsExcel:async b=>{
     if(!stats().n)return;b.disabled=true;const old=b.innerHTML;b.textContent='Making charts…';
@@ -1790,8 +1793,53 @@ function libSaveExam(){
   LIB.exams[S.id]={id:S.id,data,updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
   LIB.curExam=S.id;libSave();
 }
+
+/* ---------- marked pictures: the saved sheet shows which items were right or wrong ---------- */
+const markPicsOn=()=>S.markPics!==false;
+function drawMarksOn(ctx,cfg,ans,roll,ver,scale){
+  const g=geo(cfg),TD=tplDims(cfg),k=scale||1,rad=(g.d/2*RS+2)*k;
+  const P=b=>[(b.u+RM)*RS*k,(b.v+TD.RMT)*RS*k];
+  const ring=(b,col,fill,dash)=>{const [px,py]=P(b);ctx.beginPath();ctx.arc(px,py,rad,0,Math.PI*2);ctx.setLineDash(dash?[4*k,3*k]:[]);ctx.lineWidth=3*k;ctx.strokeStyle=col;if(fill){ctx.fillStyle=fill;ctx.fill()}ctx.stroke();ctx.setLineDash([])};
+  const key=keyOf(ver||0);
+  for(let d=0;d<cfg.roll;d++){const ch=(roll||'')[d];if(ch>='0'&&ch<='9')ring(g.roll[d][+ch],'#2152A3','rgba(33,82,163,.25)')}
+  (ans||[]).forEach((a,i)=>{
+    if(!g.ans[i])return;
+    const kk=key[i];
+    if(a.length===1&&a[0]===kk)ring(g.ans[i].opts[kk],'#1B9A5A','rgba(27,154,90,.3)');
+    else{a.forEach(o=>{if(g.ans[i].opts[o])ring(g.ans[i].opts[o],a.length>1?'#C98A12':'#D03B28',a.length>1?'rgba(201,138,18,.3)':'rgba(208,59,40,.3)')});if(kk!=null&&g.ans[i].opts[kk])ring(g.ans[i].opts[kk],'#1B9A5A',null,true)}
+  });
+}
+/* Add the marks to pictures that were saved before (or without) marking. */
+async function remarkPics(){
+  const rs=Object.values(S.results).filter(r=>r.ans&&r.ans.length);
+  if(!rs.length){toast('No scanned sheets in this exam yet.','bad');return}
+  const expW=Math.round((tplDims(S.cfg).FW+2*RM)*RS),expH=Math.round((tplDims(S.cfg).FH+RM+tplDims(S.cfg).RMT)*RS);
+  let done=0,skipped=0,missing=0;
+  toast('Marking the saved pictures…');
+  for(const r of rs){
+    const key=picKey(r.roll);
+    const blob=await PicDB.get(key).catch(()=>null);
+    if(!blob){missing++;continue}
+    try{
+      const img=await createImageBitmap(blob);
+      const sx=img.width/expW,sy=img.height/expH;
+      if(Math.abs(sx-sy)>0.03){skipped++;img.close&&img.close();continue}
+      const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+      const x=c.getContext('2d');x.drawImage(img,0,0);img.close&&img.close();
+      drawMarksOn(x,S.cfg,r.ans,r.roll,r.ver||0,sx);
+      const out=await new Promise(res=>c.toBlob(res,'image/jpeg',0.8));
+      if(out){await PicDB.put(key,out);LIB.picMeta[key]=Date.now();delete LIB.tomb['p:'+key];done++}
+    }catch(e){skipped++}
+  }
+  libSave();refreshPicCount&&refreshPicCount();
+  alertBox('Pictures marked',[`${done} picture${done===1?'':'s'} now show green for correct and red for wrong.`]
+    .concat(missing?[`${missing} student${missing===1?' has':'s have'} no saved picture.`]:[])
+    .concat(skipped?[`${skipped} picture${skipped===1?' was':'s were'} made by an older version and can’t be marked. Rescan those sheets if you want marks on them.`]:[]),done?'ok':'bad');
+}
 function savePic(cur){
-  try{const c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;c.getContext('2d').putImageData(cur.base,0,0);
+  try{const c=document.createElement('canvas');c.width=cur.base.width;c.height=cur.base.height;
+    const x=c.getContext('2d');x.putImageData(cur.base,0,0);
+    if(markPicsOn())drawMarksOn(x,cur.cfg,cur.ans,cur.roll,cur.ver||0,1);
     const key=picKey(cur.roll);
     c.toBlob(b=>{if(!b)return;PicDB.put(key,b).then(()=>{LIB.picMeta[key]=Date.now();delete LIB.tomb['p:'+key];libSave()}).catch(()=>{})},'image/jpeg',0.8)}catch(e){}
 }
