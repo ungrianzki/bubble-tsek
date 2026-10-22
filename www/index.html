@@ -245,7 +245,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
-const APP_VER='15';
+const APP_VER='16';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -645,7 +645,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores',autoSave:false,sound:true}}
 function load(){try{const t=localStorage.getItem(STORE);if(t)return Object.assign(fresh(),JSON.parse(t))}catch(e){}return fresh()}
-function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}try{if(typeof libSaveExam==='function')libSaveExam()}catch(e){}}
+function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){storageFull()}try{if(typeof libSaveExam==='function')libSaveExam()}catch(e){}}
 let S=load();
 const UI={keyErr:null,listErr:null,listWarn:null,cur:null,view:'exam'};
 const fmt=n=>(Math.round(n*100)/100).toString();
@@ -1299,7 +1299,7 @@ const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB',
 
 let LIB=null;
 function libLoad(){try{const t=localStorage.getItem(LIB_KEY);if(t)return JSON.parse(t)}catch(e){}return null}
-function libSave(){try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){toast('Phone storage is full. Remove old pictures or exams.','bad')}}
+function libSave(){try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){storageFull()}}
 const curTerm=()=>LIB.terms.find(t=>t.id===LIB.curTerm);
 const termOf=id=>LIB.terms.find(t=>t.id===id);
 const getClass=id=>LIB.classes.find(c=>c.id===id);
@@ -1778,7 +1778,7 @@ function ensureSyncFields(){LIB.tomb=LIB.tomb||{};LIB.picMeta=LIB.picMeta||{};LI
 function knownIds(){return [...LIB.classes.map(c=>'c:'+c.id),...Object.keys(LIB.exams).map(id=>'x:'+id),...LIB.terms.map(t=>'t:'+t.id),...Object.keys(LIB.banks||{}).map(id=>'b:'+id)]}
 function libSave(){
   if(LIB.tomb){const now=Date.now(),cur=new Set(knownIds());(LIB.known||[]).forEach(k=>{if(!cur.has(k))LIB.tomb[k]=now});LIB.known=[...cur];LIB.savedAt=now}
-  try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){toast('Phone storage is full. Remove old pictures or exams.','bad')}
+  try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){storageFull()}
   try{scheduleSync()}catch(e){}
 }
 // Only mark an exam as changed when its real content changes (not when you just move between steps).
@@ -2265,15 +2265,39 @@ async function restoreBackup(file,mode){
   }
   return {classes:LIB.classes.length,exams:Object.keys(LIB.exams).length,pics};
 }
+
+/* ---------- how much of the fixed text space is used ---------- */
+const LS_CAP=5*1024*1024;
+function lsBytes(){let n=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);n+=k.length+((localStorage.getItem(k)||'').length)}}catch(e){}return n}
+function lsParts(){const J=o=>{try{return o==null?0:JSON.stringify(o).length}catch(e){return 0}};
+  return [['Exams & scores',J(LIB.exams)],['Picture list',J(LIB.picMeta)+J(LIB.drivePics)],['Question banks',J(LIB.banks)],['Classes & students',J(LIB.classes)+J(LIB.terms)]]}
+const fmtSize=n=>n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':n<1073741824?(n/1048576).toFixed(1)+' MB':(n/1073741824).toFixed(1)+' GB';
+let _fullAt=0;
+function storageFull(){
+  const now=Date.now();if(now-_fullAt<60000)return;_fullAt=now;
+  try{toast('Storage is full — that was NOT saved.','bad')}catch(e){}
+  try{alertBox('Storage is full',['This device cannot save any more scores, so the last scan was not saved.','Save a backup now, then delete terms or exams you no longer need. Backup & restore shows how much space is left.'],'warn')}catch(e){}
+}
+async function fillStorage(){
+  const el=document.querySelector('#stoNote');if(!el)return;
+  try{const e=await navigator.storage.estimate(),u=e.usage||0,q=e.quota||0;
+    el.textContent='Pictures and app files on this device: '+fmtSize(u)+(q?' of about '+fmtSize(q)+' available':'')+'.';
+  }catch(e){el.textContent='Pictures are kept separately and are limited only by free space.'}
+}
 function backupPanel(){
   const n=Object.keys(LIB.picMeta||{}).length;
+  const sUsed=lsBytes(),sPct=sUsed/LS_CAP*100,
+    sCol=sPct>=85?'var(--bad)':sPct>=60?'var(--warn)':'var(--ok)',
+    sWarn=sPct>=85?' \u2014 <b style="color:var(--bad)">almost full: save a backup, then delete old terms</b>':sPct>=60?' \u2014 getting full':'',
+    sParts=lsParts().filter(p=>p[1]>500).sort((a,b)=>b[1]-a[1]).map(p=>p[0]+' '+fmtSize(p[1])).join(' \u00b7 ');
   openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><div><p class="eyebrow">Backup · app version ${APP_VER}</p><h2 style="margin:0">Backup &amp; restore</h2></div><button class="btn small" data-act="closeModal">Close</button></div>
   <p class="dim" style="max-width:62ch">A backup file keeps your classes, exams, answer keys and scores — even if this phone is lost or the app is cleared. Save it to Google Drive or your computer.</p>
   <div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0"><div class="tile"><small>Classes</small><b style="font-size:1.05rem">${LIB.classes.length}</b></div><div class="tile"><small>Exams</small><b style="font-size:1.05rem">${Object.keys(LIB.exams).length}</b></div><div class="tile"><small>Pictures</small><b style="font-size:1.05rem">${n}</b></div></div>
+  <div class="card" style="margin-bottom:10px"><b>Storage on this device</b><p class="help" style="margin-top:4px">Scores, classes and question banks share a fixed ${fmtSize(LS_CAP)} space. Pictures do not count towards it.</p><div style="height:10px;border-radius:999px;background:var(--line);overflow:hidden;margin:8px 0 6px"><div style="height:100%;width:${Math.max(2,Math.min(100,Math.round(sPct)))}%;background:${sCol}"></div></div><p style="margin:0;font-size:.95rem"><b>${fmtSize(sUsed)}</b> of ${fmtSize(LS_CAP)} used (${sPct<1?"under 1":Math.round(sPct)}%)${sWarn}</p>${sParts?`<p class="help" style="margin-top:6px">${sParts}</p>`:""}<p class="help" id="stoNote" style="margin-top:4px">Checking pictures…</p></div>
   <div class="card" style="margin-bottom:10px"><b>Save a backup</b><p class="help">Scores only is small and quick. With pictures can be very large (about ${Math.max(1,Math.round(n*0.12))} MB here).</p>
     <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkSave" data-p="0">${NATIVE?ICON.share:ICON.dl} Scores only</button><button class="btn" data-act="bkSave" data-p="1" ${n?'':'disabled'}>${NATIVE?ICON.share:ICON.dl} Scores + pictures</button></div></div>
   <div class="card"><b>Restore from a backup</b><p class="help">Pick a .json or .zip backup file. <b>Add</b> keeps what is on this device and fills in what is missing. <b>Replace</b> wipes this device first.</p>
-    <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkPick" data-m="merge">Restore (add)</button><button class="btn danger" data-act="bkPick" data-m="replace">Restore (replace everything)</button></div></div>`,{wide:true});
+    <div class="actions" style="margin-top:8px"><button class="btn" data-act="bkPick" data-m="merge">Restore (add)</button><button class="btn danger" data-act="bkPick" data-m="replace">Restore (replace everything)</button></div></div>`,{wide:true});fillStorage();
 }
 
 
