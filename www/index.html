@@ -112,6 +112,8 @@ h2{margin:0 0 10px;font-size:1.15rem;text-wrap:balance}
 .kgrid.compact{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
 .kgrid.compact .bub{width:32px;height:32px;font-size:.8rem}
 /* table */
+.cellfill{cursor:pointer}
+.cellfill:hover{background:var(--surface2)}
 .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
 table{border-collapse:collapse;width:100%;font-size:.92rem}
 th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -245,7 +247,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
-const APP_VER='16';
+const APP_VER='20';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -339,7 +341,7 @@ function oldCfg(T){const c=S&&S.cfg||{};return {roll:3,q:T.cfg.q,opt:5,mc:c.mc||
 const SMAX=1.8, VSTRETCH=1.5, HSTRETCH=1.4, GH=33.8, RB=77, GAP=1.2;
 const MARK_MIN={1:0.16,2:0.25,3:0.38};
 const FIELDS={
-  roll:{label:'Roll number digits',min:2,max:6,step:1,help:'How many digits in each roll number (2 to 6).',layout:true},
+  roll:{label:'ID digits to shade',min:2,max:6,step:1,help:'Students shade the last 6 digits of their student number. Change this only for an older sheet.',layout:true},
   q:{label:'Number of questions',min:1,max:100,step:1,help:'From 1 to 100 questions.',layout:true},
   opt:{label:'Choices per question',min:2,max:5,step:1,help:'2 to 5 choices.',layout:true},
   mc:{label:'Points for a correct answer',min:0.5,max:20,step:0.5,help:'From 0.5 to 20.'},
@@ -412,10 +414,10 @@ function sheetPrims(cfg){
   p.push({t:'rect',x:16,y:9,w:184,h:32,lw:.35});
   [17,25,33].forEach(y=>p.push({t:'line',x1:16,y1:y,x2:200,y2:y,lw:.25}));
   ['NAME :','SECTION :','EXAM :','DATE :'].forEach((str,i)=>T(str,19,9+i*8+5.6,10));
-  T(`${cfg.q} item${cfg.q>1?'s':''}  ·  choices A–${LET[cfg.opt-1]}  ·  roll no. ${cfg.roll} digits`,16,46.5,7);
+  T(`${cfg.q} item${cfg.q>1?'s':''}  ·  choices A–${LET[cfg.opt-1]}`,16,46.5,7);
   [[0,0],[FW,0],[FW,FH],[0,FH],[0,FH/2],[FW,FH/2]].forEach(([u,v])=>p.push({t:'rect',x:X(u)-MK/2,y:Y(v)-MK/2,w:MK,h:MK,fill:1}));
   const x0=G.x0,rc=x0+(10.5+(cfg.roll-1)*3)*hx,r0=G.roll[0][0].v;
-  T('Roll No',X(rc),Y(r0-11*vy),fs,'center',true);
+  T('Shade the last '+cfg.roll+' digits',X(rc),Y(r0-12.6*vy),fs*0.92,'center',true);T('of your student number',X(rc),Y(r0-10.9*vy),fs*0.92,'center',true);
   for(let d=0;d<cfg.roll;d++)p.push({t:'rect',x:X(G.roll[d][0].u-3*hx+.4),y:Y(r0-9.6*vy),w:6*hx-.8,h:Math.min(6*vy,8),lw:.3});
   for(let r=0;r<10;r++){T(String(r),X(x0+7.2*hx),Y(G.roll[0][r].v+fs*.13),fs,'right');for(let d=0;d<cfg.roll;d++)p.push({t:'circle',cx:X(G.roll[d][r].u),cy:Y(G.roll[d][r].v),r:G.d/2,lw:.3})}
   const r9=G.roll[0][9].v;
@@ -643,7 +645,7 @@ const STORE='bubbletsek.v1';
 const $=(s,r=document)=>r.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function today(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function fresh(){return {step:0,sheetReady:false,cfg:{roll:3,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores',autoSave:false,sound:true}}
+function fresh(){return {step:0,sheetReady:false,cfg:{roll:6,q:20,opt:4,mc:1,mi:0},key:Array(20).fill(null),keyFrom:'',exam:{name:'',section:'',date:today()},students:[],listName:'',results:{},sens:2,tab:'scores',autoSave:false,sound:true}}
 function load(){try{const t=localStorage.getItem(STORE);if(t)return Object.assign(fresh(),JSON.parse(t))}catch(e){}return fresh()}
 function persist(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){storageFull()}try{if(typeof libSaveExam==='function')libSaveExam()}catch(e){}}
 let S=load();
@@ -661,7 +663,7 @@ const keyCount=()=>keyCountOf(curVer());
 const keyComplete=()=>{for(let v=0;v<versCount();v++)if(!keyDoneOf(v))return false;return true};
 const detailsDone=()=>!!(S.exam.name.trim()&&S.exam.section.trim()&&S.exam.date);
 const maxScore=()=>S.cfg.q*S.cfg.mc;
-const layoutText=c=>`${c&&TPLS[c.tpl]?'school sheet: ':''}${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit roll number`;
+const layoutText=c=>`${c&&TPLS[c.tpl]?'school sheet: ':''}${c.q} question${c.q>1?'s':''}, ${c.opt} choices (A–${LET[c.opt-1]}), ${c.roll}-digit ID number`;
 const sameLayout=(a,b)=>a.roll===b.roll&&a.q===b.q&&a.opt===b.opt;
 function fitKey(){
   const fit=a=>{const k=Array(S.cfg.q).fill(null);for(let i=0;i<S.cfg.q;i++){const v=(a||[])[i];k[i]=v!=null&&v<S.cfg.opt?v:null}return k};
@@ -670,8 +672,8 @@ function fitKey(){
 function listIssues(){
   const errs=[],seen={};
   S.students.forEach(s=>{
-    if(s.roll.length>S.cfg.roll)errs.push(`${s.name}: roll number ${s.roll} has ${s.roll.length} digits, but the bubble sheet only has ${S.cfg.roll}.`);
-    const k=rk(s.roll);if(seen[k])errs.push(`Roll number ${s.roll} is used twice (${seen[k]} and ${s.name}).`);else seen[k]=s.name;
+    if(s.roll.length>S.cfg.roll)errs.push(`${s.name}: ID number ${s.roll} has ${s.roll.length} digits, but the bubble sheet only has ${S.cfg.roll}.`);
+    const k=rk(s.roll);if(seen[k])errs.push(`ID number ${s.roll} is used twice (${seen[k]} and ${s.name}).`);else seen[k]=s.name;
   });
   return errs;
 }
@@ -750,10 +752,165 @@ const ICON={
   ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6m0-6-9 9M18 14v6H4V6h6"/></svg>'
 };
 
+
+/* ---------- section score report: every exam in the term, one column each ---------- */
+const byStudentName=(a,b)=>String(a&&a.name||'').localeCompare(String(b&&b.name||''),'en',{sensitivity:'base',numeric:true});
+function reportExams(classId){
+  return Object.values(LIB.exams||{})
+    .filter(x=>x&&x.data&&x.data.classId===classId)
+    .map(x=>({id:x.id,
+      name:(x.data.exam&&x.data.exam.name)||'Untitled exam',
+      date:(x.data.exam&&x.data.exam.date)||'',
+      max:x.data.cfg?Math.round(x.data.cfg.q*x.data.cfg.mc*100)/100:0,
+      at:x.updatedAt||0,rec:x}))
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date))||a.at-b.at);
+}
+/* rollKey -> score, using each sheet's own version key */
+function examScoreMap(rec){
+  const d=rec&&rec.data,out={};
+  if(!d||!d.results||!d.cfg)return out;
+  Object.values(d.results).forEach(r=>{
+    if(!r||(!r.ans&&!r.manual))return;
+    if(!r.manual){const key=keyForRes(d,r);if(key.length<d.cfg.q)return}
+    const sc=resScore(r,d.cfg,keyForRes(d,r));
+    if(sc!==null)out[rollKey(r.roll)]={v:sc,manual:!!r.manual};
+  });
+  return out;
+}
+function reportData(){
+  const c=getClass(UI.classId);if(!c)return null;
+  UI.repHide=UI.repHide||{};
+  const all=reportExams(c.id);
+  const cols=all.filter(e=>!UI.repHide[e.id]).map(e=>Object.assign({},e,{sc:examScoreMap(e.rec)}));
+  const rows=[...c.students].sort(byStudentName).map(s=>({name:s.name,roll:s.roll,
+    scores:cols.map(e=>{const v=e.sc[rollKey(s.roll)];return v===undefined?null:v})}));
+  return {c:c,term:termOf(c.termId),all:all,cols:cols,rows:rows};
+}
+function reportView(){
+  const R=reportData();
+  if(!R){UI.view='classes';return classesView()}
+  const c=R.c,all=R.all,cols=R.cols,rows=R.rows;
+  const colStat=cols.map((e,ci)=>{const v=rows.map(r=>r.scores[ci]).filter(x=>x!==null).map(x=>x.v);
+    return {n:v.length,avg:v.length?v.reduce((a,b)=>a+b,0)/v.length:null}});
+  return `<section class="panel">
+  <div class="head"><p class="eyebrow"><a href="#" data-act="goClasses">My classes</a> › <a href="#" data-act="openClass" data-id="${c.id}">${esc(c.section)}</a> › Score report</p>
+    <h1>Score report</h1>
+    <p class="lede">${c.subject?esc(c.subject)+' · ':''}${esc(c.section)} · ${rows.length} student${rows.length===1?'':'s'} · ${all.length} exam${all.length===1?'':'s'}${R.term?' · '+esc(R.term.name):''}</p></div>
+  <div class="toolbar">
+    <button class="btn" data-act="openClass" data-id="${c.id}">${ICON.back} Back to class</button>
+    <button class="btn primary" data-act="repExcel"${cols.length?'':' disabled'}>${ICON.dl} Download Excel</button>
+  </div>
+  ${all.length?`<div class="card" style="margin-bottom:12px"><b>Show these exams</b>
+    <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px">
+    ${all.map(e=>`<label style="display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox" data-rep="${e.id}"${UI.repHide[e.id]?'':' checked'}> <span>${esc(e.name)}${e.date?' <span class="dim">'+esc(e.date)+'</span>':''}</span></label>`).join('')}
+    </div></div>`:''}
+  ${!all.length?'<p class="dim">No exams yet for this class.</p>':!cols.length?'<p class="dim">All exams are hidden. Tick one above to see scores.</p>':`
+  <div class="tbl-wrap" style="max-height:70vh"><table><thead><tr>
+    <th class="num">#</th><th>ID number</th><th>Student name</th>
+    ${cols.map(e=>`<th class="num">${esc(e.name)}<br><span class="dim" style="font-weight:400">(${fmt(e.max)})</span></th>`).join('')}
+  </tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(r.roll)}</td><td>${esc(r.name)}</td>
+    ${r.scores.map((v,ci)=>`<td class="num cellfill" data-act="repCell" data-e="${cols[ci].id}" data-r="${esc(rollKey(r.roll))}" title="${v===null?'Type a score':(v.manual?'Typed in — tap to edit':'From a scanned sheet')}">${v===null?'<span class="dim">—</span>':(v.manual?`<b>${fmt(v.v)}</b><span class="dim" style="font-size:.78em"> ✎</span>`:`<b>${fmt(v.v)}</b>`)}</td>`).join('')}</tr>`).join('')}
+  </tbody><tfoot><tr><td></td><td></td><td class="dim">Scanned · average</td>
+    ${colStat.map(s=>`<td class="num dim">${s.n} / ${rows.length}<br>${s.avg===null?'—':fmt(Math.round(s.avg*100)/100)}</td>`).join('')}
+  </tr></tfoot></table></div>
+  <p class="dim" style="margin-top:8px">Tap any cell to type a score in by hand — for a paper answered without a bubble sheet. ✎ marks a typed-in score. A dash means nothing is recorded yet.</p>`}
+  </section>`;
+}
+function reportExcelBytes(){
+  const R=reportData();if(!R||!R.cols.length)return null;
+  const head=['ROLL NO','STUDENT NAME'].concat(R.cols.map(e=>e.name));
+  const maxRow=['MAX POINTS',''].concat(R.cols.map(e=>e.max));
+  const body=R.rows.map(r=>[r.roll,r.name].concat(r.scores.map(v=>v===null?'':v.v)));
+  const ws=XLSX.utils.aoa_to_sheet([head,maxRow].concat(body));
+  ws['!cols']=[{wch:10},{wch:34}].concat(R.cols.map(()=>({wch:13})));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Scores');
+  return XLSX.write(wb,{bookType:'xlsx',type:'array'});
+}
+document.addEventListener('change',e=>{
+  const t=e.target;if(!t||!t.dataset||!t.dataset.rep)return;
+  UI.repHide=UI.repHide||{};
+  if(t.checked)delete UI.repHide[t.dataset.rep];else UI.repHide[t.dataset.rep]=1;
+  render();
+});
+
+
+/* ---------- manual scores: a paper answered without a bubble sheet ---------- */
+const isManual=r=>!!(r&&r.manual);
+/* one place that knows how to score ANY saved result */
+function resScore(r,cfg,key){
+  if(!r)return null;
+  if(r.manual)return Math.round((+r.score||0)*100)/100;
+  if(!r.ans)return null;
+  return gradeWith(r.ans,cfg,key||[]).score;
+}
+const examMax=d=>d&&d.cfg?Math.round(d.cfg.q*d.cfg.mc*100)/100:0;
+const keyForRes=(d,r)=>((r&&r.ver===1&&d.keyB&&d.keyB.length)?d.keyB:d.key)||[];
+function recalcSummary(x){
+  const d=x.data,rs=Object.values(d.results||{});
+  const vals=rs.map(r=>resScore(r,d.cfg,keyForRes(d,r))).filter(v=>v!==null);
+  x.summary={n:vals.length,avg:vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0,max:examMax(d)};
+}
+/* write a manual score into the open exam (S) or into a stored one (LIB.exams) */
+function setManualScore(examId,roll,score){
+  if(examId===S.id){
+    const k=rk(roll);
+    S.results[k]={roll:k,manual:true,score:score,at:Date.now(),ver:0};
+    persist();
+  }else{
+    const x=LIB.exams[examId];if(!x)return;
+    const k=String(roll).padStart((x.data.cfg&&x.data.cfg.roll)||3,'0');
+    x.data.results[k]={roll:k,manual:true,score:score,at:Date.now(),ver:0};
+    recalcSummary(x);x.updatedAt=Date.now();libSave();
+  }
+}
+function clearManualScore(examId,roll){
+  if(examId===S.id){const k=rk(roll);if(isManual(S.results[k])){delete S.results[k];persist()}return}
+  const x=LIB.exams[examId];if(!x)return;
+  const k=String(roll).padStart((x.data.cfg&&x.data.cfg.roll)||3,'0');
+  if(isManual(x.data.results[k])){delete x.data.results[k];recalcSummary(x);x.updatedAt=Date.now();libSave()}
+}
+/* the little dialog, used from Results and from the report */
+function manualScoreDialog(o){
+  UI.manual=o;
+  const cur=o.current===null||o.current===undefined?'':fmt(o.current);
+  openModal(`<h2 style="margin-bottom:4px">${o.current===null?'Enter a score':'Edit the score'}</h2>
+  <p class="dim" style="margin:0 0 14px">${esc(o.name)} · ${esc(o.examName)} · out of ${fmt(o.max)}</p>
+  <div class="field"><label for="mScore">Score</label>
+    <input id="mScore" type="number" inputmode="decimal" min="0" max="${o.max}" step="any" value="${cur}" style="font-size:1.4rem;font-weight:700;max-width:160px">
+    <p class="help" id="mErr" hidden style="color:var(--bad)"></p>
+    <p class="help">For a paper answered without a bubble sheet. It counts in the totals and exports, but not in the item analysis.</p></div>
+  <div class="actions">${o.current===null?'':'<button class="btn danger" data-act="mClear">Remove score</button>'}
+    <button class="btn" data-act="closeModal">Cancel</button>
+    <button class="btn primary" data-act="mSave">${o.current===null?'Save score':'Save changes'}</button></div>`);
+  setTimeout(()=>{const el=$('#mScore');if(el){el.focus();el.select()}},50);
+}
+
+
+/* ---------- late enrollees: add an unknown student from the review card ---------- */
+const normName=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+function lateAddForm(){
+  const cur=UI.cur,c=S.classId?getClass(S.classId):null;
+  return `<div class="card" style="margin-top:6px">
+    <b>Add this student to ${esc(c?c.section:'the class')}</b>
+    <p class="help" style="margin-top:2px">The sheet shaded <span class="mono">${esc(cur.roll)}</span>. Type the name the way it appears on your class list.</p>
+    <div class="field" style="margin-top:10px"><label for="lateName">Student name</label>
+      <input class="txt" id="lateName" placeholder="LASTNAME, FIRSTNAME M." value="${esc(cur.lateName||'')}"></div>
+    <p class="help" id="lateWarn"${cur.lateWarn?'':' hidden'} style="color:var(--warn)">${esc(cur.lateWarn||'')}</p>
+    <div class="actions" style="margin-top:10px;justify-content:flex-end">
+      <button class="btn" data-act="lateCancel">Cancel</button>
+      <button class="btn primary" data-act="lateSave">${cur.lateWarn?'Add anyway':'Add to class'}</button></div></div>`;
+}
+function lateAddRefresh(){
+  const el=$('#resAdd');if(!el)return;
+  el.hidden=!UI.cur.adding;el.innerHTML=UI.cur.adding?lateAddForm():'';
+  if(UI.cur.adding)setTimeout(()=>{const i=$('#lateName');if(i)i.focus()},40);
+}
+
 /* ================= render ================= */
 function render(){
   try{paintSyncChip()}catch(e){}
-  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():UI.view==='bank'?itemBankView():UI.view==='qbanks'?banksView():UI.view==='qbank'?bankView():UI.view==='maketest'?makeTestView():classesView();persist();return}
+  if(UI.view!=='exam'){camClose();$('#stepper').hidden=true;$('#ctx').innerHTML='';$('#main').innerHTML=UI.view==='class'?classView():UI.view==='report'?reportView():UI.view==='bank'?itemBankView():UI.view==='qbanks'?banksView():UI.view==='qbank'?bankView():UI.view==='maketest'?makeTestView():classesView();persist();return}
   $('#stepper').hidden=false;syncClass();$('#ctx').innerHTML=ctxBar();
   if(S.step!==4)camClose();
   if(!canOpen(S.step)){let i=0;while(i<5&&stepDone(i))i++;S.step=Math.min(S.step,i)}
@@ -847,7 +1004,7 @@ function scanSide(){
   <div class="card"><small class="dim" style="display:block;margin-bottom:8px">Mark detection</small>
   <div class="seg" role="group" aria-label="Mark detection">${[[1,'Light marks'],[2,'Normal'],[3,'Strict']].map(([v,l])=>`<button class="${S.sens===v?'on':''}" data-act="sens" data-v="${v}">${l}</button>`).join('')}</div>
   <p class="help">Use “Light marks” for faint pencil or small X marks. Use “Strict” if erased marks are being counted.</p></div>
-  <div class="card"><small class="dim" style="display:block;margin-bottom:6px">Last saved</small>${recent.length?`<ul class="recent">${recent.map(r=>{const g=grade(r.ans),s=sm[r.roll];return `<li><span>${esc(s?s.name:r.roll)}</span><span class="mono">${fmt(g.score)}/${fmt(maxScore())}</span></li>`}).join('')}</ul>`:'<p class="dim" style="margin:0;font-size:.9rem">Nothing saved yet.</p>'}</div>`;
+  <div class="card"><small class="dim" style="display:block;margin-bottom:6px">Last saved</small>${recent.length?`<ul class="recent">${recent.map(r=>{const sc=resScore(r,S.cfg,keyOf(r.ver||0)),s=sm[r.roll];return `<li><span>${esc(s?s.name:r.roll)}</span><span class="mono">${sc===null?'—':fmt(sc)}/${fmt(maxScore())}</span></li>`}).join('')}</ul>`:'<p class="dim" style="margin:0;font-size:.9rem">Nothing saved yet.</p>'}</div>`;
 }
 
 /* ================= sounds ================= */
@@ -968,7 +1125,7 @@ function mountCanvas(cur,mode){const box=$('#resImg');if(!box)return;let c=box.q
 // Why a scanned sheet needs the teacher to look at it (auto-save never saves these).
 function checkReasons(cur){
   const r=[],valid=/^\d+$/.test(cur.roll),st=valid?studentMap()[cur.roll]:null;
-  if(!st)r.push(valid?`roll number ${cur.roll} is not in the class list`:'the roll number is unclear');
+  if(!st)r.push(valid?`ID number ${cur.roll} is not in the class list`:'the ID number is unclear');
   const multi=cur.ans.map((a,i)=>a.length>1?i+1:0).filter(Boolean);
   if(multi.length)r.push(`question${multi.length>1?'s':''} ${multi.join(', ')} ha${multi.length>1?'ve':'s'} 2+ answers`);
   if(st&&S.results[cur.roll])r.push(`${st.name} already has a saved score`);
@@ -994,7 +1151,7 @@ function autoSaveCur(cur){
   const g=grade(cur.ans),el=document.createElement('div');
   el.className='autopop';el.id='autoPop';el.setAttribute('role','status');
   el.innerHTML=`<div class="ap-top"><span class="ap-ok">✓ Saved</span><span class="ap-score"><b>${fmt(g.score)}</b> / ${fmt(maxScore())}</span></div>
-    <div class="ap-name">${esc(st.name)}</div><div class="ap-roll">Roll no. ${esc(cur.roll)} · ${g.c} correct · ${g.w} wrong · ${g.b} blank</div>
+    <div class="ap-name">${esc(st.name)}</div><div class="ap-roll">ID number ${esc(cur.roll)} · ${g.c} correct · ${g.w} wrong · ${g.b} blank</div>
     <div class="ap-btns"><button class="btn small" data-act="apUndo">Undo</button><button class="btn small" data-act="apEdit">Edit</button></div><div class="ap-bar"><i></i></div>`;
   box.appendChild(el);
   UI.ap={cur,timer:setTimeout(()=>{hideAutoPop();UI.ap=null;camResume(cur.sig)},2000)};
@@ -1007,21 +1164,23 @@ function resultModal(){
   <div>
     <div id="resInfo">${resInfo()}</div>
     <div id="resEdit" ${cur.editing?'':'hidden'}>${cur.editing?resEditor():''}</div>
+    <div id="resAdd" ${cur.adding?'':'hidden'}>${cur.adding?lateAddForm():''}</div>
     <div class="actions" id="resBtns">${resButtons()}</div>
   </div></div>`;
 }
 function resInfo(){
   const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
   let warn='';
-  if(!st)warn=`<div class="alert bad"><b>${validRoll?`Roll number ${esc(cur.roll)} is not in the class list.`:'The roll number is missing or has more than one shade in a column.'}</b><br>This score can’t be saved. Tap <b>Edit</b> to fix the roll number, or discard it.</div>`;
-  else if(prev&&!(cur.autoSaved&&cur.roll===cur.savedRoll))warn=`<div class="alert warn">${esc(st.name)} already has a saved score of <b>${fmt(grade(prev.ans).score)}</b>. Saving will replace it.</div>`;
+  if(!st){const lc=S.classId?getClass(S.classId):null,canAdd=validRoll&&lc&&!isPastExam();
+    warn=`<div class="alert bad"><b>${validRoll?`ID number ${esc(cur.roll)} is not in the class list.`:'The ID number is missing or has more than one shade in a column.'}</b><br>Nothing has been saved for this sheet. ${canAdd?'If this is a late enrollee, add them to the class. Otherwise tap':'Tap'} <b>Edit</b> to fix the ID number, or discard it.${canAdd&&!cur.adding?`<div style="margin-top:9px"><button class="btn small" data-act="addLate">+ Add to class</button></div>`:''}</div>`;}
+  else if(prev&&!(cur.autoSaved&&cur.roll===cur.savedRoll))warn=`<div class="alert warn">${esc(st.name)} already has a ${isManual(prev)?'typed-in':'saved'} score of <b>${fmt(resScore(prev,S.cfg,keyOf(prev.ver||0)))}</b>. Saving will replace it.</div>`;
   const multiQ=cur.ans.map((a,i)=>a.length>1?i+1:0).filter(Boolean);
   if(cur.reasons&&cur.reasons.length)warn=`<div class="alert warn"><b>Auto-save paused for this sheet:</b> ${esc(cur.reasons.join('; '))}.</div>`+warn;
   else if(multiQ.length)warn+=`<div class="alert warn">Question${multiQ.length>1?'s':''} ${multiQ.join(', ')} ha${multiQ.length>1?'ve':'s'} 2+ answers and ${multiQ.length>1?'are':'is'} counted wrong. Tap <b>Edit</b> if the scan misread them.</div>`;
   if(cur.autoSaved)warn=`<div class="alert ok">This score was auto-saved. Change anything, then tap <b>Save score</b>. <b>Discard</b> removes it.</div>`+warn;
   return `<p class="eyebrow">Score</p><div class="score"><b>${fmt(g.score)}</b><span>/ ${fmt(maxScore())}</span></div>
   <div class="who">${st?esc(st.name):'<span class="dim">Unknown student</span>'}</div>
-  <div class="dim">Roll no. <span class="mono">${st?esc(cur.roll):'—'}</span></div>
+  <div class="dim">ID number <span class="mono">${st?esc(cur.roll):'—'}</span></div>
   <div class="chips"><span class="pill ok">${g.c} correct</span><span class="pill bad">${g.w-g.m} wrong</span><span class="pill">${g.b} blank</span>${g.m?`<span class="pill warn">${g.m} with 2+ answers</span>`:''}</div>
   <div class="legend"><span><b style="color:#1B9A5A">●</b> correct</span><span><b style="color:#D03B28">●</b> wrong</span><span><b style="color:#1B9A5A">◌</b> right answer</span><span><b style="color:#C98A12">●</b> 2+ answers</span></div>
   ${warn}`;
@@ -1032,10 +1191,11 @@ function resButtons(){
 }
 function resEditor(){
   const cur=UI.cur;
-  return `<div class="card" style="margin-top:6px"><div class="field"><label for="edRoll">Roll number</label><input class="txt mono" id="edRoll" data-ed="roll" inputmode="numeric" maxlength="${S.cfg.roll}" value="${esc(cur.roll.replace(/\?/g,''))}" style="max-width:180px"></div>
+  return `<div class="card" style="margin-top:6px"><div class="field"><label for="edRoll">ID number</label><input class="txt mono" id="edRoll" data-ed="roll" inputmode="numeric" maxlength="${S.cfg.roll}" value="${esc(cur.roll.replace(/\?/g,''))}" style="max-width:180px"></div>
   <p class="help" style="margin:12px 0 8px">Tap to change answers. Tap a shaded one to clear it.</p>${keyGrid(cur.ans,'edAns',false,true)}</div>`;
 }
-function refreshRes(){const i=$('#resInfo');if(i)i.innerHTML=resInfo();const b=$('#resBtns');if(b)b.innerHTML=resButtons();mountCanvas(UI.cur,'student')}
+function refreshRes(){if(UI.cur&&UI.cur.adding&&/^\d+$/.test(UI.cur.roll)&&studentMap()[UI.cur.roll]){UI.cur.adding=false;UI.cur.lateWarn='';lateAddRefresh()}
+  const i=$('#resInfo');if(i)i.innerHTML=resInfo();const b=$('#resBtns');if(b)b.innerHTML=resButtons();mountCanvas(UI.cur,'student')}
 
 function onKeyCap(cap){
   const probs=[];cap.ans.forEach((a,i)=>{if(a.length!==1)probs.push(i+1)});UI.cur=cap;
@@ -1050,7 +1210,7 @@ function onTplCap(cap){
   openModal(`<div class="res"><div class="res-img" id="resImg"></div><div>
     <p class="eyebrow">Sheet found</p><h2>${c.q} questions · A–${LET[c.opt-1]}</h2>
     <div class="tbl-wrap" style="margin:10px 0 14px"><table><tbody>
-    <tr><td>Roll number digits</td><td class="num">${c.roll}</td></tr><tr><td>Questions</td><td class="num">${c.q}</td></tr><tr><td>Choices</td><td class="num">${c.opt}</td></tr>
+    <tr><td>ID number digits</td><td class="num">${c.roll}</td></tr><tr><td>Questions</td><td class="num">${c.q}</td></tr><tr><td>Choices</td><td class="num">${c.opt}</td></tr>
     <tr><td>Points if correct</td><td class="num">${fmt(c.mc)}</td></tr><tr><td>Points off if wrong</td><td class="num">${fmt(c.mi)}</td></tr></tbody></table></div>
     ${full?'<div class="alert ok">All questions are shaded, so this sheet will be your <b>answer key</b>.</div>':marked?`<div class="alert warn">${marked} questions are shaded. They’ll be added to the answer key and you can fill in the rest.</div>`:'<div class="alert">No answers are shaded. Only the settings will be used.</div>'}
     <div class="actions"><button class="btn" data-act="tplRescan">Scan again</button><button class="btn primary" data-act="tplUse">Use this sheet</button></div></div></div>`,{wide:true,onClose:camClose});
@@ -1064,14 +1224,16 @@ function scannerModal(title,lede,mode,expect,onCap){
 /* ================= results & analysis ================= */
 function stats(){
   const only=UI.verView;
-  let rows=S.students.map(s=>{const r=S.results[rk(s.roll)];return {s,r,g:r?grade(r.ans,r.ver||0):null}});
+  let rows=S.students.map(s=>{const r=S.results[rk(s.roll)];
+    return {s,r,g:!r?null:(r.manual?{score:Math.round((+r.score||0)*100)/100,manual:true,c:null,w:null,b:null,m:0,items:[]}:grade(r.ans,r.ver||0))}});
   if(only!=null&&versCount()>1)rows=rows.filter(x=>x.r&&(x.r.ver||0)===only);
   const done=rows.filter(x=>x.g);
+  const scanned=done.filter(x=>!x.g.manual);
   const sc=done.map(x=>x.g.score).sort((a,b)=>a-b),n=sc.length;
-  return {rows,done,n,mean:n?sc.reduce((a,b)=>a+b,0)/n:0,hi:n?sc[n-1]:0,lo:n?sc[0]:0,med:n?(n%2?sc[(n-1)/2]:(sc[n/2-1]+sc[n/2])/2):0};
+  return {rows,done,scanned,n,mean:n?sc.reduce((a,b)=>a+b,0)/n:0,hi:n?sc[n-1]:0,lo:n?sc[0]:0,med:n?(n%2?sc[(n-1)/2]:(sc[n/2-1]+sc[n/2])/2):0};
 }
 function itemStats(){
-  const st=stats(),done=[...st.done].sort((a,b)=>b.g.score-a.g.score),n=done.length,k=Math.max(1,Math.round(n*.27));
+  const st=stats(),done=[...st.scanned].sort((a,b)=>b.g.score-a.g.score),n=done.length,k=Math.max(1,Math.round(n*.27));
   const up=done.slice(0,k),low=done.slice(-k);
   return Array.from({length:S.cfg.q},(_,i)=>{
     const cnt=Array(S.cfg.opt).fill(0);let blank=0,multi=0,right=0;
@@ -1086,16 +1248,17 @@ function itemStats(){
 }
 const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 function scoresTable(st){
-  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th>${versCount()>1?'<th class="c">Ver</th>':''}<th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
+  return `<div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>ID number</th><th>Student name</th>${versCount()>1?'<th class="c">Ver</th>':''}<th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th>Status</th><th></th></tr></thead><tbody>
   ${st.rows.map((x,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>${versCount()>1?`<td class="c">${x.r?VLET[x.r.ver||0]:''}</td>`:''}
-  ${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td style="white-space:nowrap"><button class="btn small" data-act="viewPic" data-r="${esc(rk(x.s.roll))}">Sheet</button> <button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
-  :`<td class="num dim">—</td><td></td><td></td><td></td><td></td><td><span class="pill">Not scanned</span></td><td></td>`}</tr>`).join('')}</tbody></table></div>`;
+  ${x.g&&x.g.manual?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num dim">—</td><td class="num dim">—</td><td class="num dim">—</td><td><span class="pill warn">Typed in</span></td><td style="white-space:nowrap"><button class="btn small" data-act="manualRes" data-r="${esc(rk(x.s.roll))}">Edit</button></td>`
+  :x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td><td><span class="pill ok">Scanned</span></td><td style="white-space:nowrap"><button class="btn small" data-act="viewPic" data-r="${esc(rk(x.s.roll))}">Sheet</button> <button class="btn small danger" data-act="delRes" data-r="${esc(rk(x.s.roll))}">Remove</button></td>`
+  :`<td class="num dim">—</td><td></td><td></td><td></td><td></td><td><span class="pill">Not scanned</span></td><td style="text-align:right"><button class="btn small" data-act="manualRes" data-r="${esc(rk(x.s.roll))}">Enter score</button></td>`}</tr>`).join('')}</tbody></table></div>`;
 }
 function studentAnalysis(st,forReport){
   const q=S.cfg.q;const cls={C:'cell-c',W:'cell-w',B:'cell-b',M:'cell-m'};
   if(!st.done.length)return '<p class="dim">No scanned sheets yet.</p>';
   return `<div class="legend"><span class="cell-c">A = correct</span><span class="cell-w">B = wrong</span><span class="cell-m">* = 2+ answers</span><span class="cell-b">– = blank</span></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th class="num">2+ ans.</th>${Array.from({length:q},(_,i)=>`<th class="c">Q${i+1}</th>`).join('')}</tr>
+  <div class="tbl-wrap"><table><thead><tr><th>ID number</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th><th class="num">2+ ans.</th>${Array.from({length:q},(_,i)=>`<th class="c">Q${i+1}</th>`).join('')}</tr>
   <tr><td colspan="8" class="dim" style="text-align:right">Answer key${versCount()>1?' ('+VLET[UI.verView||0]+')':''}</td>${Array.from({length:q},(_,i)=>`<td class="c keycol">${LET[keyOf(UI.verView||0)[i]]??''}</td>`).join('')}</tr></thead><tbody>
   ${[...st.done].sort((a,b)=>b.g.score-a.g.score).map(x=>`<tr><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td><td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w-x.g.m}</td><td class="num">${x.g.b}</td><td class="num">${x.g.m}</td>
   ${x.g.items.map((t,i)=>{const a=x.r.ans[i]||[];return `<td class="c ${cls[t]}">${t==='B'?'–':t==='M'?'*':LET[a[0]]}</td>`}).join('')}</tr>`).join('')}</tbody></table></div>`;
@@ -1137,7 +1300,9 @@ function resultsView(){
 function excelBytes(){
   const q=S.cfg.q,V=versCount()>1,head=['ROLL NO','STUDENT NAME',((S.exam.name||'').trim()+' SCORE').trim().toUpperCase(),...(V?['VERSION']:[]),...Array.from({length:q},(_,i)=>'QUESTION '+(i+1))];
   const rows=S.students.map(s=>{const r=S.results[rk(s.roll)],roll=/^0/.test(s.roll)?s.roll:Number(s.roll);
-    if(!r)return [roll,s.name,'',...(V?['']:[]),...Array(q).fill('')];const g=grade(r.ans,r.ver||0);return [roll,s.name,g.score,...(V?[VLET[r.ver||0]]:[]),...g.items.map(t=>t==='C'?'OK':'X')]});
+    if(!r)return [roll,s.name,'',...(V?['']:[]),...Array(q).fill('')];
+    if(isManual(r))return [roll,s.name,Math.round((+r.score||0)*100)/100,...(V?['']:[]),...Array(q).fill('')];
+    const g=grade(r.ans,r.ver||0);return [roll,s.name,g.score,...(V?[VLET[r.ver||0]]:[]),...g.items.map(t=>t==='C'?'OK':'X')]});
   const ws=XLSX.utils.aoa_to_sheet([head,...rows]);
   ws['!cols']=[{wch:10},{wch:33.57},{wch:15},...(V?[{wch:9}]:[]),...Array(q).fill({wch:11.57})];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'results');
@@ -1157,7 +1322,7 @@ h1{margin:0;font-size:26px}h2{font-size:18px;margin:34px 0 10px;padding-top:14px
 <h1>${esc(S.exam.name)}</h1><div class="dim">${esc(S.exam.section)} · ${esc(S.exam.date)} · ${layoutText(S.cfg)} · +${fmt(S.cfg.mc)} correct${S.cfg.mi?`, −${fmt(S.cfg.mi)} wrong`:''}</div>
 ${NATIVE?'':'<a class="print" href="javascript:window.print()">Print this report</a>'}
 <div class="tiles"><div class="tile"><small>Scanned</small><b>${st.n} / ${S.students.length}</b></div><div class="tile"><small>Average</small><b>${st.n?fmt(st.mean):'—'} / ${mx}</b></div><div class="tile"><small>Median</small><b>${st.n?fmt(st.med):'—'}</b></div><div class="tile"><small>Highest</small><b>${fmt(st.hi)}</b></div><div class="tile"><small>Lowest</small><b>${fmt(st.lo)}</b></div></div>
-<h2>Scores</h2><div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th></tr></thead><tbody>
+<h2>Scores</h2><div class="tbl-wrap"><table><thead><tr><th class="num">#</th><th>ID number</th><th>Student name</th><th class="num">Score</th><th class="num">%</th><th class="num">Correct</th><th class="num">Wrong</th><th class="num">Blank</th></tr></thead><tbody>
 ${st.rows.map((x,i)=>`<tr><td class="num">${i+1}</td><td class="mono">${esc(rk(x.s.roll))}</td><td>${esc(x.s.name)}</td>${x.g?`<td class="num"><b>${fmt(x.g.score)}</b></td><td class="num">${pct(x.g.score,maxScore())}</td><td class="num">${x.g.c}</td><td class="num">${x.g.w}</td><td class="num">${x.g.b}</td>`:'<td class="num dim" colspan="5">Not scanned</td>'}</tr>`).join('')}</tbody></table></div>
 <h2>Analysis by student response</h2>${studentAnalysis(st)}
 <h2>Analysis by option response</h2>${optionAnalysis(st)}
@@ -1196,7 +1361,7 @@ const ACT={
     const nx=$('#main .actions .btn.primary');if(nx)nx.disabled=!keyComplete();$('#stepper').innerHTML;renderStepperOnly()},
   clearKey:()=>confirmBox('Clear the answer key?','All answers you set will be removed.',[{label:'Clear answers',cls:'danger',fn:()=>{if(curVer()===1)S.keyB=Array(S.cfg.q).fill(null);else S.key=Array(S.cfg.q).fill(null);S.keyFrom='';render()}}]),
   pickList:()=>$('#fileList').click(),
-  dlListEx:()=>saveFile('example classlist with roll number.csv','STUDENT NAME,ROLL NO\r\n"ABESIA, ALEXA JOHNNYHL FABIA",301\r\n"AGATON, JENILYN DE JESUS",302\r\n"AGUILOR, KIRLYN DAPILAGA",303\r\n"ALBALADEJO, ELIJAH JARED IGNACIO",304\r\n"ANDRES, JOHN RANDELLE VERANO",305\r\n','text/csv'),
+  dlListEx:()=>saveFile('example class list with ID numbers.csv','STUDENT NAME,ID NUMBER\r\n"ABESIA, ALEXA JOHNNYHL FABIA",301\r\n"AGATON, JENILYN DE JESUS",302\r\n"AGUILOR, KIRLYN DAPILAGA",303\r\n"ALBALADEJO, ELIJAH JARED IGNACIO",304\r\n"ANDRES, JOHN RANDELLE VERANO",305\r\n','text/csv'),
   camStart:b=>{if(b&&b.dataset.p!=null&&b.dataset.p!==Cam.p)return;camStart()},
   camStop:()=>camStop(),
   photo:()=>{audioUnlock();const f=$('#filePhoto');f.value='';f.click()},
@@ -1272,13 +1437,17 @@ $('#fileList').addEventListener('change',async e=>{
   try{
     const rows=await readRows(file),errs=[],warns=[];
     if(!rows.length)throw new Error('The file is empty.');
-    const head=rows[0].map(c=>String(c).trim().toUpperCase()),ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>h.includes('ROLL'));
-    if(ni<0||ri<0)throw new Error('The first row must have the column names STUDENT NAME and ROLL NO, like the example file.');
+    const head=rows[0].map(c=>String(c).trim().toUpperCase()),ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>ID_HEAD(h));
+    if(ni<0||ri<0)throw new Error('The first row must have the column names STUDENT NAME and ID NUMBER (or ROLL NO), like the example file.');
     const list=[];
-    rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim(),roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
-      if(!name&&!roll)return;if(!roll){errs.push(`Line ${line}: ${name} has no roll number.`);return}
-      if(!/^\d+$/.test(roll)){errs.push(`Line ${line}: roll number “${roll}” should only have digits.`);return}
-      if(!name)warns.push(`Line ${line}: roll number ${roll} has no name.`);list.push({name:name||'(no name)',roll})});
+    let shortened=0;
+    rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim();let roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
+      if(!name&&!roll)return;if(!roll){errs.push(`Line ${line}: ${name} has no ID number.`);return}
+      const rawId=roll;roll=rawId.replace(/\D/g,'');
+      if(!roll){errs.push(`Line ${line}: ID number “${rawId}” has no digits in it.`);return}
+      if(roll.length>ID_MAX){roll=shortenId(roll);shortened++}
+      if(!name)warns.push(`Line ${line}: ID number ${roll} has no name.`);list.push({name:name||'(no name)',roll})});
+    if(shortened)warns.push(shortened+' full student number'+(shortened===1?' was':'s were')+' shortened to the last '+ID_MAX+' digits — the digits students shade.');
     if(!list.length&&!errs.length)errs.push('No students were found under the column names.');
     if(errs.length){UI.listErr=errs;UI.listWarn=null;render();alertBox('We couldn’t use that file',errs);return}
     S.students=list;S.listName=file.name;UI.listErr=null;UI.listWarn=warns;render();
@@ -1293,6 +1462,10 @@ const DEFAULT_SUBJECTS=['LIVING IN THE IT ERA','INFORMATION MANAGEMENT','INTRO T
 const KNOWN_SECTIONS=['BSA 1C','BSAIS 1A','BSBA-MM2C','BSP 3A','BSP 3B','BSP 3C','BSP 3D','CRIM 1B','CRIM 1C','CRIM 1D','CRIM 1E','DA 3D','DA 3C','EMC 2D'];
 const uid=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const normKey=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const ID_HEAD=h=>h.includes('ROLL')||h.includes('ID')||h.includes('STUDENT NO')||h.includes('STUDENT NUMBER');
+/* a pasted full student number is stored as the digits the sheet actually asks for */
+const ID_MAX=6;
+function shortenId(v){const d=String(v==null?'':v).replace(/\D/g,'');return d.length>ID_MAX?d.slice(-ID_MAX):d}
 const rollKey=r=>String(r).replace(/\D/g,'').replace(/^0+(?=\d)/,'');
 const GLOBAL_KEYS=['sens','autoSave','sound','markPics'];
 const EXAM_KEYS=['id','termId','classId','step','sheetReady','cfg','key','keyB','vers','test','keyFrom','exam','students','listName','results','tab'];
@@ -1316,7 +1489,8 @@ function examSnapshot(){const d={};EXAM_KEYS.forEach(k=>d[k]=S[k]);return JSON.p
 function libSaveExam(){
   if(!LIB||!S.id)return;
   const rs=Object.values(S.results||{}),max=S.cfg.q*S.cfg.mc;
-  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key)).score,0)/rs.length:0;
+  const sv=rs.map(r=>resScore(r,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key))).filter(v=>v!==null);
+  const avg=sv.length?sv.reduce((a,b)=>a+b,0)/sv.length:0;
   const has=rs.length||S.exam.name.trim()||S.sheetReady;
   if(!has&&!LIB.exams[S.id])return;
   LIB.exams[S.id]={id:S.id,data:examSnapshot(),updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
@@ -1395,7 +1569,7 @@ async function viewPic(roll){
   try{blob=await PicDB.get(picKey(roll))}catch(e){}
   if(!blob){alertBox('No picture saved',['This sheet was scanned before pictures were saved, or the picture was deleted. Scan the sheet again to save a picture.'],'warn');return}
   const url=URL.createObjectURL(blob);UI.picView={roll,blob,url,name:picName(st,roll)};
-  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start;margin-bottom:10px"><div><p class="eyebrow">Scanned sheet</p><h2 style="margin:0">${esc(st?st.name:roll)}</h2><p class="dim" style="margin:2px 0 0">Roll no. ${esc(roll)} · ${esc(S.exam.name)} · ${esc(S.exam.section)}</p></div><button class="btn small" data-act="closeModal">Close</button></div>
+  openModal(`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start;margin-bottom:10px"><div><p class="eyebrow">Scanned sheet</p><h2 style="margin:0">${esc(st?st.name:roll)}</h2><p class="dim" style="margin:2px 0 0">ID number ${esc(roll)} · ${esc(S.exam.name)} · ${esc(S.exam.section)}</p></div><button class="btn small" data-act="closeModal">Close</button></div>
     <img src="${url}" alt="Scanned sheet of ${esc(st?st.name:roll)}" style="display:block;max-width:100%;max-height:65vh;margin:0 auto;border:1px solid var(--line);border-radius:8px">
     <div class="actions"><button class="btn danger" data-act="picDelete">Delete picture</button><button class="btn primary" data-act="picShare">${NATIVE?ICON.share+' Share':ICON.dl+' Download'}</button></div>`,{wide:true,onClose:()=>{URL.revokeObjectURL(url);UI.picView=null}});
 }
@@ -1454,6 +1628,7 @@ function classView(){
     <button class="btn" data-act="pickClassCsv">${ICON.up} Upload student list</button>
     <button class="btn" data-act="addStudent">+ Add student</button>
     <button class="btn" data-act="editClass">Edit name / subject</button>`}
+    ${NATIVE?'':`<button class="btn" data-act="openReport" data-id="${c.id}">Score report</button>`}
     <button class="btn danger" data-act="delClass">Delete class</button>
   </div>
   <h2 class="grp-h">Exams <span class="dim" style="font-weight:400;font-size:.9rem">${ex.length}</span></h2>
@@ -1461,9 +1636,9 @@ function classView(){
     ${ex.map(x=>`<tr><td><b>${esc(x.data.exam.name||'Untitled exam')}</b>${x.id===S.id?' <span class="pill acc">open</span>':''}</td><td>${esc(x.data.exam.date||'')}</td><td class="num">${x.summary.n} / ${c.students.length}</td><td class="num">${x.summary.n?fmt(x.summary.avg)+' / '+fmt(x.summary.max):'—'}</td>
     <td style="text-align:right"><button class="btn small" data-act="openExam" data-id="${x.id}">Open</button> <button class="btn small danger" data-act="delExam" data-id="${x.id}">Delete</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="dim">No exams yet for this class.</p>'}
   <h2 class="grp-h">Students <span class="dim" style="font-weight:400;font-size:.9rem">${c.students.length}</span></h2>
-  ${c.students.length?`<div class="tbl-wrap" style="max-height:460px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th><th></th></tr></thead><tbody>
+  ${c.students.length?`<div class="tbl-wrap" style="max-height:460px"><table><thead><tr><th class="num">#</th><th>ID number</th><th>Student name</th><th></th></tr></thead><tbody>
     ${c.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(s.roll)}${dup[rollKey(s.roll)]>1?' <span class="pill bad">duplicate</span>':''}</td><td>${esc(s.name)}</td><td style="text-align:right">${past?'':`<button class="btn small" data-act="editStudent" data-i="${i}">Edit</button> <button class="btn small danger" data-act="delStudent" data-i="${i}">Remove</button>`}</td></tr>`).join('')}</tbody></table></div>`
-  :'<div class="card dim">No students yet. Upload a CSV with STUDENT NAME and ROLL NO, or add students one by one.</div>'}
+  :'<div class="card dim">No students yet. Upload a list with STUDENT NAME and ID NUMBER, or add students one by one.</div>'}
   <div class="actions"><button class="btn" data-act="goClasses">${ICON.back} My classes</button><button class="btn" data-act="backToExam">Back to current exam</button></div>
   </section>`;
 }
@@ -1472,13 +1647,13 @@ function classStepView(){
   const t=termOf(S.termId)||curTerm(),cls=classesOf(t.id);
   const bySub={};cls.forEach(x=>{(bySub[x.subject||'No subject']=bySub[x.subject||'No subject']||[]).push(x)});
   return `<section class="panel">
-  <div class="head">${eyebrow(3)}<h1>Choose the class</h1><p class="lede">Pick a saved class, or upload a CSV with <b>STUDENT NAME</b> and <b>ROLL NO</b>. Scores are matched to students in this class only.</p></div>
+  <div class="head">${eyebrow(3)}<h1>Choose the class</h1><p class="lede">Pick a saved class, or upload a list with <b>STUDENT NAME</b> and <b>ID NUMBER</b>. Scores are matched to students in this class only.</p></div>
   ${c?`<div class="note"><p><b>${esc(c.section)}</b>${c.subject?' · '+esc(c.subject):''} · ${c.students.length} students</p><div style="display:flex;gap:8px;flex-wrap:wrap">${locked?'':'<button class="btn small" data-act="clearClass">Change class</button>'}<button class="btn small" data-act="openClass" data-id="${c.id}">Edit class</button></div></div>`
   :`${cls.length?Object.keys(bySub).map(s=>`<h2 class="grp-h">${esc(s)}</h2><div class="cls-grid">${bySub[s].map(x=>`<button class="cls-card" data-act="chooseClass" data-id="${x.id}"><b>${esc(x.section)}</b><span>${x.students.length} students</span></button>`).join('')}</div>`).join(''):'<div class="card dim" style="margin-bottom:14px">No saved classes yet. Upload a CSV below, or add classes in <b>My classes</b>.</div>'}
   <div class="toolbar" style="margin-top:14px"><button class="btn" data-act="pickList">${ICON.up} Upload CSV instead</button><button class="btn" data-act="dlListEx">${ICON.dl} Example CSV</button><button class="btn" data-act="goClasses">My classes</button></div>`}
   ${UI.listErr?`<div class="alert bad"><b>We couldn’t use that file.</b><ul>${UI.listErr.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}
   ${iss.length?`<div class="alert bad"><b>Please fix these in the class list.</b><ul>${iss.slice(0,8).map(e=>`<li>${esc(e)}</li>`).join('')}${iss.length>8?`<li>…and ${iss.length-8} more</li>`:''}</ul></div>`:''}
-  ${S.students.length?`<div class="tbl-wrap" style="max-height:380px"><table><thead><tr><th class="num">#</th><th>Roll no.</th><th>Student name</th></tr></thead><tbody>
+  ${S.students.length?`<div class="tbl-wrap" style="max-height:380px"><table><thead><tr><th class="num">#</th><th>ID number</th><th>Student name</th></tr></thead><tbody>
   ${S.students.map((s,i)=>`<tr><td class="num dim">${i+1}</td><td class="mono">${esc(rk(s.roll))}</td><td>${esc(s.name)}</td></tr>`).join('')}</tbody></table></div>`:''}
   <div class="actions"><button class="btn" data-act="go" data-i="2">${ICON.back} Back</button><button class="btn primary" data-act="go" data-i="4" ${stepDone(3)&&!isPastExam()?'':'disabled'}>${ICON.cam} Start scanning</button></div>
 </section>`;
@@ -1488,20 +1663,23 @@ function classStepView(){
 function parseClassRows(rows,needSection){
   const errs=[];if(!rows.length)return {errs:['The file is empty.']};
   const head=rows[0].map(c=>String(c).trim().toUpperCase());
-  const ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>h.includes('ROLL'));
+  const ni=head.findIndex(h=>h.includes('NAME')),ri=head.findIndex(h=>ID_HEAD(h));
   const si=head.findIndex(h=>h.includes('SECTION')||h==='CLASS'),ui=head.findIndex(h=>h.includes('SUBJECT'));
-  if(ni<0||ri<0)return {errs:['The first row must have the column names STUDENT NAME and ROLL NO'+(needSection?' and CLASS SECTION':'')+'.']};
+  if(ni<0||ri<0)return {errs:['The first row must have the column names STUDENT NAME and ID NUMBER'+(needSection?' and CLASS SECTION':'')+'.']};
   if(needSection&&si<0)return {errs:['This file has no CLASS SECTION column. Add one, or open a class and upload its list there.']};
   const items=[];
-  rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim(),roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
+  let shortened=0;
+  rows.slice(1).forEach((r,i)=>{const line=i+2,name=String(r[ni]??'').trim();let roll=String(r[ri]??'').trim().replace(/\.0+$/,'');
     if(!name&&!roll)return;
-    if(!roll){errs.push(`Line ${line}: ${name} has no roll number.`);return}
-    if(!/^\d+$/.test(roll)){errs.push(`Line ${line}: roll number “${roll}” should only have digits.`);return}
+    if(!roll){errs.push(`Line ${line}: ${name} has no ID number.`);return}
+    const rawId=roll;roll=rawId.replace(/\D/g,'');
+    if(!roll){errs.push(`Line ${line}: ID number “${rawId}” has no digits in it.`);return}
+    if(roll.length>ID_MAX){roll=shortenId(roll);shortened++}
     const section=si<0?'':String(r[si]??'').trim(),subject=ui<0?'':String(r[ui]??'').trim().toUpperCase();
     if(needSection&&!section){errs.push(`Line ${line}: ${name} has no class section.`);return}
     items.push({name:name||'(no name)',roll,section,subject});
   });
-  return {errs,items,hasSubject:ui>=0};
+  return {errs,items,hasSubject:ui>=0,shortened:shortened};
 }
 function importPreview(items,hasSubject){
   const t=curTerm(),groups={};
@@ -1516,9 +1694,9 @@ function importPreview(items,hasSubject){
   <div class="tbl-wrap" style="max-height:44vh;margin-bottom:12px"><table><thead><tr><th>Section</th><th>Subject</th><th class="num">Students</th><th>Status</th></tr></thead><tbody>
   ${list.map(g=>`<tr><td><b>${esc(g.section)}</b></td><td>${esc(g.subject||(g.existing&&g.existing.subject)||'—')}</td><td class="num">${g.students.length}</td><td>${g.dupes.length?`<span class="pill bad">Roll ${esc([...new Set(g.dupes)].join(', '))} used twice</span>`:g.existing?'<span class="pill acc">Update existing</span>':'<span class="pill ok">New class</span>'}</td></tr>`).join('')}
   </tbody></table></div>
-  ${anyDupe?'<div class="alert bad">Some sections have the same roll number twice. Fix those in your file and upload again — the other classes can still be imported.</div>':''}
+  ${anyDupe?'<div class="alert bad">Some sections have the same ID number twice. Fix those in your file and upload again — the other classes can still be imported.</div>':''}
   ${needSub?`<div class="field"><label for="impSub">Subject for classes without one</label><select class="txt" id="impSub">${subjectOptions('')}</select></div>`:''}
-  ${anyExisting?`<div class="field" style="margin-top:12px"><label>For classes that already exist</label><div class="seg" id="impMode"><button class="on" data-act="impMode" data-v="update">Update list (keep scores)</button><button data-act="impMode" data-v="replace">Replace list</button></div><p class="help">Update adds new students and fixes names by roll number. Replace uses only the students in this file.</p></div>`:''}
+  ${anyExisting?`<div class="field" style="margin-top:12px"><label>For classes that already exist</label><div class="seg" id="impMode"><button class="on" data-act="impMode" data-v="update">Update list (keep scores)</button><button data-act="impMode" data-v="replace">Replace list</button></div><p class="help">Update adds new students and fixes names by ID number. Replace uses only the students in this file.</p></div>`:''}
   <div class="actions" style="justify-content:flex-end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn primary" data-act="doImport">Import ${list.filter(g=>!g.dupes.length).length} class${list.filter(g=>!g.dupes.length).length===1?'':'es'}</button></div>`,{wide:true});
   UI.importMode='update';
 }
@@ -1635,6 +1813,48 @@ Object.assign(ACT,{
   backToExam:()=>{UI.view='exam';render();window.scrollTo({top:0})},
   openClass:b=>{persist();UI.classId=b.dataset.id;UI.view='class';render();window.scrollTo({top:0})},
   openExam:b=>openExam(b.dataset.id),
+  addLate:()=>{UI.cur.adding=true;UI.cur.lateWarn='';lateAddRefresh()},
+  lateCancel:()=>{UI.cur.adding=false;UI.cur.lateWarn='';UI.cur.lateName='';lateAddRefresh()},
+  lateSave:()=>{
+    const cur=UI.cur,c=S.classId?getClass(S.classId):null;
+    if(!c){toast('This exam has no class attached, so there is nobody to add to.','bad');return}
+    const el=$('#lateName'),name=((el&&el.value)||'').trim();
+    cur.lateName=name;
+    if(!name){cur.lateWarn='';const w=$('#lateWarn');if(w){w.textContent='Type the student’s name first.';w.hidden=false}return}
+    const clash=c.students.find(s=>normName(s.name)===normName(name));
+    if(clash&&!cur.lateWarn){
+      cur.lateWarn=clash.name+' is already in '+c.section+' with '+'ID number'+' '+clash.roll+'. If this is the same student, tap Edit and fix the number instead of adding a second record.';
+      lateAddRefresh();return;
+    }
+    c.students.push({name:name,roll:cur.roll});
+    c.updatedAt=Date.now();libSave();syncClass();
+    cur.adding=false;cur.lateWarn='';cur.lateName='';
+    cur.reasons=S.autoSave?checkReasons(cur):[];
+    lateAddRefresh();refreshRes();
+    toast(name+' added to '+c.section+' — now tap Save score');
+  },
+  mSave:()=>{const o=UI.manual;if(!o)return;
+    const el=$('#mScore'),raw=String(el?el.value:'').trim(),v=Number(raw),err=$('#mErr');
+    const bad=raw===''?'Type a score first.':(!isFinite(v)?'That is not a number.':(v<0?'A score cannot be less than 0.':(v>o.max?'That is more than the '+fmt(o.max)+' points this exam is out of.':'')));
+    if(bad){if(err){err.textContent=bad;err.hidden=false}return}
+    setManualScore(o.examId,o.roll,Math.round(v*100)/100);closeModal();
+    toast('Score saved: '+esc(o.name)+' '+fmt(Math.round(v*100)/100)+'/'+fmt(o.max));render()},
+  mClear:()=>{const o=UI.manual;if(!o)return;clearManualScore(o.examId,o.roll);closeModal();render()},
+  manualRes:b=>{const roll=b.dataset.r,st=studentMap()[roll],r=S.results[roll];
+    manualScoreDialog({examId:S.id,roll:roll,name:st?st.name:roll,examName:S.exam.name||'This exam',
+      max:maxScore(),current:isManual(r)?(+r.score||0):null})},
+  repCell:b=>{const x=LIB.exams[b.dataset.e];if(!x)return;
+    const c=getClass(UI.classId),st=(c?c.students:[]).find(s=>rollKey(s.roll)===b.dataset.r);
+    const k=Object.keys(x.data.results||{}).find(kk=>rollKey(kk)===b.dataset.r);
+    const r=k?x.data.results[k]:null;
+    if(r&&!isManual(r)){toast('That score came from a scanned sheet. Open the exam to change it.');return}
+    manualScoreDialog({examId:x.id,roll:st?st.roll:b.dataset.r,name:st?st.name:b.dataset.r,
+      examName:(x.data.exam&&x.data.exam.name)||'Exam',max:examMax(x.data),
+      current:r?(+r.score||0):null})},
+  openReport:b=>{persist();UI.classId=b.dataset.id;UI.view='report';UI.repHide={};render();window.scrollTo({top:0})},
+  repExcel:()=>{const R=reportData();if(!R||!R.cols.length)return;
+    const bytes=reportExcelBytes();if(!bytes)return;
+    shareOrSave(safeName((R.c.section||'CLASS')+' scores '+today())+'.xlsx',bytes,XLSX_MIME,'Score report')},
   delExam:b=>{const id=b.dataset.id,x=LIB.exams[id];confirmBox('Delete this exam?',`“${esc(x.data.exam.name||'Untitled exam')}” and its ${x.summary.n} saved score${x.summary.n===1?'':'s'} and pictures will be deleted from this device.`,[{label:'Delete exam',cls:'danger',fn:()=>{
     delete LIB.exams[id];PicDB.delPrefix(id+'|').catch(()=>{});libSave();if(id===S.id){S=newExamState(null)}render();toast('Exam deleted')}}])},
   newExam:()=>{
@@ -1683,15 +1903,15 @@ Object.assign(ACT,{
   editStudent:b=>{const c=getClass(UI.classId),s=c.students[+b.dataset.i];UI.editStudent=+b.dataset.i;formModal('Edit student',studentFormBody(s.name,s.roll),'Save','doSaveStudent')},
   doSaveStudent:()=>{
     const c=getClass(UI.classId),name=($('#stName').value||'').trim(),roll=($('#stRoll').value||'').trim();
-    if(!name||!/^\d+$/.test(roll)){toast('Enter a name and a roll number (digits only).','bad');return}
-    if(c.students.some((s,i)=>i!==UI.editStudent&&rollKey(s.roll)===rollKey(roll))){toast(`Roll number ${roll} is already used in ${c.section}.`,'bad');return}
+    if(!name||!/^\d+$/.test(roll)){toast('Enter a name and a ID number (digits only).','bad');return}
+    if(c.students.some((s,i)=>i!==UI.editStudent&&rollKey(s.roll)===rollKey(roll))){toast(`ID number ${roll} is already used in ${c.section}.`,'bad');return}
     if(UI.editStudent>=0)c.students[UI.editStudent]={name,roll};else c.students.push({name,roll});
     c.updatedAt=Date.now();libSave();if(S.classId===c.id)syncClass();closeModal();render();toast('Student saved');
   },
   delStudent:b=>{const c=getClass(UI.classId),i=+b.dataset.i,s=c.students[i];confirmBox('Remove student?',`${esc(s.name)} (${esc(s.roll)}) will be removed from ${esc(c.section)}. Saved scores stay in past exams.`,[{label:'Remove',cls:'danger',fn:()=>{c.students.splice(i,1);libSave();if(S.classId===c.id)syncClass();render()}}])},
   pickClasses:()=>$('#fileClasses').click(),
   pickClassCsv:()=>$('#fileClass').click(),
-  dlClassesEx:()=>saveFile('example class lists all sections.csv','STUDENT NAME,ROLL NO,CLASS SECTION,SUBJECT\r\n"ALFONSO, MCNIEL T.",801,DA 3D,INFORMATION MANAGEMENT\r\n"AYNERA, CEDRIC A.",802,DA 3D,INFORMATION MANAGEMENT\r\n"DELA CRUZ, MARIA",301,BSP 3A,LIVING IN THE IT ERA\r\n"SANTOS, JUAN",301,BSP 3B,LIVING IN THE IT ERA\r\n','text/csv'),
+  dlClassesEx:()=>saveFile('example class lists all sections.csv','STUDENT NAME,ID NUMBER,CLASS SECTION,SUBJECT\r\n"ALFONSO, MCNIEL T.",801,DA 3D,INFORMATION MANAGEMENT\r\n"AYNERA, CEDRIC A.",802,DA 3D,INFORMATION MANAGEMENT\r\n"DELA CRUZ, MARIA",301,BSP 3A,LIVING IN THE IT ERA\r\n"SANTOS, JUAN",301,BSP 3B,LIVING IN THE IT ERA\r\n','text/csv'),
   impMode:b=>{UI.importMode=b.dataset.v;$('#impMode').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))},
   doImport:()=>{
     const t=curTerm(),fallback=$('#impSub')?readSubject('impSub'):'';let made=0,updated=0;
@@ -1731,7 +1951,7 @@ function classFormBody(subject,section){
 }
 function studentFormBody(name,roll){
   return `<div class="field"><label for="stName">Student name</label><input class="txt" id="stName" value="${esc(name)}" placeholder="LASTNAME, FIRSTNAME M."></div>
-    <div class="field" style="margin-top:12px"><label for="stRoll">Roll number</label><input class="txt mono" id="stRoll" inputmode="numeric" value="${esc(roll)}" placeholder="e.g. 301"></div>`;
+    <div class="field" style="margin-top:12px"><label for="stRoll">ID number</label><input class="txt mono" id="stRoll" inputmode="numeric" value="${esc(roll)}" placeholder="e.g. 301"></div>`;
 }
 document.addEventListener('change',e=>{
   const t=e.target;
@@ -1743,6 +1963,7 @@ $('#fileClasses').addEventListener('change',async e=>{
   try{const p=parseClassRows(await readRows(file),true);
     if(!p.items||!p.items.length){alertBox('We couldn’t use that file',p.errs.length?p.errs:['No students were found.']);return}
     importPreview(p.items,p.hasSubject);
+    if(p.shortened){const m0=$('#modal .sheet');if(m0)m0.insertAdjacentHTML('afterbegin',`<div class="alert warn">${p.shortened} full student number${p.shortened===1?' was':'s were'} shortened to the last ${ID_MAX} digits — the digits students shade on the sheet.</div>`)}
     if(p.errs.length){const m=$('#modal .sheet');if(m)m.insertAdjacentHTML('afterbegin',`<div class="alert warn"><b>${p.errs.length} line${p.errs.length>1?'s were':' was'} skipped:</b><ul>${p.errs.slice(0,5).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`)}
   }catch(err){alertBox('We couldn’t use that file',[err.message])}
 });
@@ -1751,8 +1972,9 @@ $('#fileClass').addEventListener('change',async e=>{
   const c=getClass(UI.classId);if(!c)return;
   try{const p=parseClassRows(await readRows(file),false);
     if(!p.items||!p.items.length){alertBox('We couldn’t use that file',p.errs.length?p.errs:['No students were found.']);return}
+    if(p.shortened)toast(p.shortened+' full student number'+(p.shortened===1?' was':'s were')+' shortened to the last '+ID_MAX+' digits.');
     const seen={},d=[];p.items.forEach(s=>{const k=rollKey(s.roll);if(seen[k])d.push(s.roll);seen[k]=1});
-    if(d.length){alertBox('Same roll number twice',[`Roll number${d.length>1?'s':''} ${[...new Set(d)].join(', ')} appear${d.length>1?'':'s'} more than once. Fix the file and upload again.`]);return}
+    if(d.length){alertBox('Same ID number twice',[`ID number${d.length>1?'s':''} ${[...new Set(d)].join(', ')} appear${d.length>1?'':'s'} more than once. Fix the file and upload again.`]);return}
     const apply=mode=>{mergeStudents(c,p.items,mode);c.updatedAt=Date.now();libSave();if(S.classId===c.id)syncClass();render();toast(`${c.students.length} students in ${c.section}`)};
     if(!c.students.length)apply('replace');
     else confirmBox('Update or replace?',`${esc(c.section)} already has ${c.students.length} students. The file has ${p.items.length}.`,[{label:'Update (keep scores)',fn:()=>apply('update')},{label:'Replace list',cls:'primary',fn:()=>apply('replace')}]);
@@ -1789,7 +2011,8 @@ function libSaveExam(){
   const has=rs.length||S.exam.name.trim()||S.sheetReady;
   if(!has&&!old)return;
   if(old&&sig(old.data)===sig(data)){old.data.step=data.step;old.data.tab=data.tab;LIB.curExam=S.id;try{localStorage.setItem(LIB_KEY,JSON.stringify(LIB))}catch(e){}return}
-  const avg=rs.length?rs.reduce((a,r)=>a+gradeWith(r.ans,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key)).score,0)/rs.length:0;
+  const sv=rs.map(r=>resScore(r,S.cfg,(r.ver===1&&S.keyB&&S.keyB.length?S.keyB:S.key))).filter(v=>v!==null);
+  const avg=sv.length?sv.reduce((a,b)=>a+b,0)/sv.length:0;
   LIB.exams[S.id]={id:S.id,data,updatedAt:Date.now(),summary:{n:rs.length,avg,max}};
   LIB.curExam=S.id;libSave();
 }
@@ -1975,7 +2198,7 @@ function buildLookupIndex(){
     const byRoll={};c.students.forEach(s=>{byRoll[String(s.roll).padStart(d.cfg.roll,'0')]=s});
     Object.values(d.results).forEach(r=>{const st=byRoll[r.roll];const k=x.id+'|'+rollKey(r.roll);
       out.push({term:t?t.name:'',subject:c.subject,section:c.section,exam:d.exam.name,date:d.exam.date,name:st?st.name:'',roll:r.roll,
-        score:gradeWith(r.ans,d.cfg,((r.ver===1&&d.keyB&&d.keyB.length)?d.keyB:d.key)).score,maxScore:d.cfg.q*d.cfg.mc,fileId:LIB.drivePics[k]?LIB.drivePics[k].id:null,updatedAt:r.at||x.updatedAt})})});
+        score:resScore(r,d.cfg,keyForRes(d,r)),maxScore:d.cfg.q*d.cfg.mc,fileId:LIB.drivePics[k]?LIB.drivePics[k].id:null,updatedAt:r.at||x.updatedAt})})});
   return {generatedAt:new Date().toISOString(),account:Sync.cfg.email,entries:out};
 }
 
@@ -2305,9 +2528,10 @@ function backupPanel(){
 function sheetTypeField(){
   const old=isOld(S.cfg),locked=hasResults();
   const cur=old?S.cfg.tpl:'bt';
-  return `<div class="field" style="grid-column:1/-1"><label>Bubble sheet</label><div class="seg" role="group" aria-label="Bubble sheet type">${[['bt','Bubble Tsek sheet'],['school','School sheet']].map(([t,l])=>`<button class="${(old?'school':'bt')===t?'on':''}" data-act="setTpl" data-t="${t==='school'?(TPLS[cur]?cur:'old20'):'bt'}" ${locked?'disabled':''}>${l}</button>`).join('')}</div>
+  const showOld=old||hasResults();
+  return `<div class="field" style="grid-column:1/-1"><label>Bubble sheet</label><div class="seg" role="group" aria-label="Bubble sheet type">${(showOld?[['bt','Bubble Tsek sheet'],['school','School sheet']]:[['bt','Bubble Tsek sheet']]).map(([t,l])=>`<button class="${(old?'school':'bt')===t?'on':''}" data-act="setTpl" data-t="${t==='school'?(TPLS[cur]?cur:'old20'):'bt'}" ${locked?'disabled':''}>${l}</button>`).join('')}</div>
   ${old?`<div class="seg" style="margin-top:8px" role="group" aria-label="School sheet size">${SCH_LIST.map(T=>`<button class="${cur===T.id?'on':''}" data-act="setTpl" data-t="${T.id}" ${locked?'disabled':''}>${T.cfg.q} items</button>`).join('')}</div>`:''}
-  <p class="help">${old?`Your school's pre-printed sheet: 3-digit roll number, ${S.cfg.q} items, choices A–E. Use the copies you already have, or print more from here. The app knows which size it is when you scan.`:'Printed from this app. Any number of items and choices.'}${locked?' Can’t change after sheets are scanned.':''}</p></div>`;
+  <p class="help">${old?`Your school's pre-printed sheet: 3-digit ID number, ${S.cfg.q} items, choices A–E. Use the copies you already have, or print more from here. The app knows which size it is when you scan.`:'Printed from this app. Any number of items and choices.'}${locked?' Can’t change after sheets are scanned.':''}</p></div>`;
 }
 Object.assign(ACT,{
   setTpl:b=>{if(hasResults())return;const t=b.dataset.t;
