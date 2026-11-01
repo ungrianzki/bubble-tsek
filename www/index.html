@@ -247,7 +247,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
-const APP_VER='20';
+const APP_VER='22';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -406,6 +406,9 @@ function geo(cfg){
   }
   return _geo[id]={s,hx,vy,d:4.4*s,x0,roll,ans,groups};
 }
+const IN_GREY='#C0C0C0',IN_SIZE=0.78;
+/* a faint character inside a bubble: tells the student what they are shading */
+function inBubble(p,cx,cy,d,ch){p.push({t:'text',s:ch,x:cx,y:cy+d*0.30*IN_SIZE,size:Math.max(4,d*2.3*IN_SIZE),align:'center',grey:IN_GREY})}
 function sheetPrims(cfg){
   if(isOld(cfg))return oldPrims(cfg);
   const G=geo(cfg),p=[],X=u=>FR.L+u,Y=v=>FR.T+v,s=G.s,hx=G.hx,vy=G.vy,fs=Math.min(11,8*s);
@@ -419,11 +422,11 @@ function sheetPrims(cfg){
   const x0=G.x0,rc=x0+(10.5+(cfg.roll-1)*3)*hx,r0=G.roll[0][0].v;
   T('Shade the last '+cfg.roll+' digits',X(rc),Y(r0-12.6*vy),fs*0.92,'center',true);T('of your student number',X(rc),Y(r0-10.9*vy),fs*0.92,'center',true);
   for(let d=0;d<cfg.roll;d++)p.push({t:'rect',x:X(G.roll[d][0].u-3*hx+.4),y:Y(r0-9.6*vy),w:6*hx-.8,h:Math.min(6*vy,8),lw:.3});
-  for(let r=0;r<10;r++){T(String(r),X(x0+7.2*hx),Y(G.roll[0][r].v+fs*.13),fs,'right');for(let d=0;d<cfg.roll;d++)p.push({t:'circle',cx:X(G.roll[d][r].u),cy:Y(G.roll[d][r].v),r:G.d/2,lw:.3})}
+  for(let r=0;r<10;r++){T(String(r),X(x0+7.2*hx),Y(G.roll[0][r].v+fs*.13),fs,'right');for(let d=0;d<cfg.roll;d++){p.push({t:'circle',cx:X(G.roll[d][r].u),cy:Y(G.roll[d][r].v),r:G.d/2,lw:.3});inBubble(p,X(G.roll[d][r].u),Y(G.roll[d][r].v),G.d,String(r))}}
   const r9=G.roll[0][9].v;
   if(G.ans.length&&G.ans[0].x===x0){T('Answer Starts Here',X(rc),Y(r9+(71-64.4)*vy),fs,'center');T('only shade 1 answer',X(rc),Y(r9+(74.8-64.4)*vy),fs*.85,'center')}
   G.groups.forEach(g=>{for(let o=0;o<cfg.opt;o++)T(LET[o],X(g.x+(10.5+o*6)*hx),Y(g.v),fs*.92,'center',true)});
-  G.ans.forEach((a,i)=>{T(String(i+1),X(a.x+7.2*hx),Y(a.v+fs*.13),fs,'right');a.opts.forEach(o=>p.push({t:'circle',cx:X(o.u),cy:Y(o.v),r:G.d/2,lw:.3}))});
+  G.ans.forEach((a,i)=>{T(String(i+1),X(a.x+7.2*hx),Y(a.v+fs*.13),fs,'right');a.opts.forEach((o,oi)=>{p.push({t:'circle',cx:X(o.u),cy:Y(o.v),r:G.d/2,lw:.3});inBubble(p,X(o.u),Y(o.v),G.d,LET[oi])})});
   if(cfg.vers>1){
     const vb=[1,(cfg.ver>>1)&1,cfg.ver&1];
     vb.forEach((b,i)=>{if(b)p.push({t:'rect',x:X(VER.x0+i*VER.cw),y:Y(FH-VER.cw/2),w:VER.cw,h:VER.cw,fill:1})});
@@ -434,6 +437,7 @@ function sheetPrims(cfg){
   T('Shade one circle fully or mark it with an X  ·  Use a dark pencil or pen  ·  Keep the black squares clean',PG.w/2,275.5,7,'center');
   return p;
 }
+const FW_PAGE=215.9,FH_PAGE=279.4;
 function sheetSVG(cfg){
   const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   let s='<svg viewBox="0 0 215.9 279.4" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bubble sheet preview"><rect width="215.9" height="279.4" fill="#fff"/>';
@@ -441,7 +445,7 @@ function sheetSVG(cfg){
     if(p.t==='rect')s+=`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${p.fill?'#000':'none'}" stroke="${p.fill?'none':'#000'}" stroke-width="${p.lw||.3}"/>`;
     else if(p.t==='circle')s+=`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="none" stroke="#000" stroke-width="${p.lw}"/>`;
     else if(p.t==='line')s+=`<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" stroke="#000" stroke-width="${p.lw}"/>`;
-    else s+=`<text x="${p.x}" y="${p.y}" font-size="${(p.size*.3528).toFixed(2)}" text-anchor="${p.align==='center'?'middle':p.align==='right'?'end':'start'}" font-family="Helvetica,Arial,sans-serif" font-weight="${p.bold?700:400}" fill="#000">${e(p.s)}</text>`;
+    else s+=`<text x="${p.x}" y="${p.y}" font-size="${(p.size*.3528).toFixed(2)}" text-anchor="${p.align==='center'?'middle':p.align==='right'?'end':'start'}" font-family="Helvetica,Arial,sans-serif" font-weight="${p.bold?700:400}" fill="${p.grey||'#000'}">${e(p.s)}</text>`;
   }
   return s+'</svg>';
 }
@@ -455,7 +459,7 @@ function sheetPDF(cfg){
     if(p.t==='rect'){doc.setLineWidth(p.lw||.3);doc.rect(p.x,p.y,p.w,p.h,p.fill?'F':'S')}
     else if(p.t==='circle'){doc.setLineWidth(p.lw);doc.circle(p.cx,p.cy,p.r,'S')}
     else if(p.t==='line'){doc.setLineWidth(p.lw);doc.line(p.x1,p.y1,p.x2,p.y2)}
-    else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);doc.text(p.s,p.x,p.y,{align:p.align})}
+    else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);if(p.grey){const g=parseInt(p.grey.slice(1,3),16);doc.setTextColor(g,g,g)}else doc.setTextColor(0);doc.text(p.s,p.x,p.y,{align:p.align});doc.setTextColor(0)}
   }
   });
   return doc.output('arraybuffer');
@@ -907,6 +911,91 @@ function lateAddRefresh(){
   if(UI.cur.adding)setTimeout(()=>{const i=$('#lateName');if(i)i.focus()},40);
 }
 
+
+/* ---------- the answer sheet as a Word file: 2 per page on 13 x 8.5 landscape ---------- */
+const DOCX_MIME='application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/* The marker frame is the same size for every exam, so one fixed scale suits them all.
+   127.7 mm of printed sheet = what the user prints today; the whole page image is wider. */
+const DOCX_IMG_MM=137.85, DOCX_PX=1880;
+const DOCX_PAGE_W=13, DOCX_PAGE_H=8.5;              // inches, landscape
+const EMU=i=>Math.round(i*914400), DXA=i=>Math.round(i*1440);
+const xmlEsc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* the sheet, drawn big, as PNG bytes */
+async function sheetPNG(cfg,px){
+  const svg=sheetSVG(cfg),blob=new Blob([svg],{type:'image/svg+xml'}),url=URL.createObjectURL(blob);
+  try{
+    const img=new Image();img.src=url;await img.decode();
+    const w=px||DOCX_PX,h=Math.round(w*FH_PAGE/FW_PAGE);
+    const c=document.createElement('canvas');c.width=w;c.height=h;
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);
+    const b=await new Promise(res=>c.toBlob(res,'image/png'));
+    return new Uint8Array(await b.arrayBuffer());
+  }finally{URL.revokeObjectURL(url)}
+}
+function docxPic(id,cx,cy){
+  return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>`+
+  `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`+
+  `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>`+
+  `<wp:docPr id="${id}" name="Answer sheet ${id}"/><wp:cNvGraphicFramePr/>`+
+  `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`+
+  `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
+  `<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
+  `<pic:nvPicPr><pic:cNvPr id="${id}" name="sheet.png"/><pic:cNvPicPr/></pic:nvPicPr>`+
+  `<pic:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`+
+  `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>`+
+  `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`+
+  `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+}
+function docxCell(w,inner){
+  const none='<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>';
+  return `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/><w:tcBorders>${none}</w:tcBorders>`+
+    `<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar>`+
+    `<w:vAlign w:val="top"/></w:tcPr>${inner}</w:tc>`;
+}
+async function sheetDocxBytes(cfg){
+  const png=await sheetPNG(cfg,DOCX_PX);
+  const wIn=DOCX_IMG_MM/25.4, hIn=wIn*FH_PAGE/FW_PAGE;
+  const side=(DOCX_PAGE_W-2*wIn)/3;                       // equal white left / middle / right
+  const top=Math.max(0.2,(DOCX_PAGE_H-hIn)/2);
+  const cx=EMU(wIn), cy=EMU(hIn), cw=DXA(wIn), gw=DXA(side);
+  const blankP='<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>';
+  const row=`<w:tr><w:trPr><w:cantSplit/></w:trPr>`+
+    docxCell(gw,blankP)+docxCell(cw,docxPic(1,cx,cy))+docxCell(gw,blankP)+
+    docxCell(cw,docxPic(2,cx,cy))+docxCell(gw,blankP)+`</w:tr>`;
+  const tbl=`<w:tbl><w:tblPr><w:tblW w:w="${gw*3+cw*2}" w:type="dxa"/>`+
+    `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>`+
+    `<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`+
+    `<w:tblGrid><w:gridCol w:w="${gw}"/><w:gridCol w:w="${cw}"/><w:gridCol w:w="${gw}"/><w:gridCol w:w="${cw}"/><w:gridCol w:w="${gw}"/></w:tblGrid>${row}</w:tbl>`;
+  const sect=`<w:sectPr><w:pgSz w:w="${DXA(DOCX_PAGE_W)}" w:h="${DXA(DOCX_PAGE_H)}" w:orient="landscape"/>`+
+    `<w:pgMar w:top="${DXA(top)}" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`;
+  const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"`+
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`+
+    ` xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">`+
+    `<w:body>${tbl}${sect}</w:body></w:document>`;
+  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`+
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`+
+    `<Default Extension="xml" ContentType="application/xml"/>`+
+    `<Default Extension="png" ContentType="image/png"/>`+
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+  const rels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+  const drels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`+
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`+
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/sheet.png"/></Relationships>`;
+  const enc=new TextEncoder();
+  return zipBytes([
+    {name:'[Content_Types].xml',data:enc.encode(ct)},
+    {name:'_rels/.rels',data:enc.encode(rels)},
+    {name:'word/document.xml',data:enc.encode(doc)},
+    {name:'word/_rels/document.xml.rels',data:enc.encode(drels)},
+    {name:'word/media/sheet.png',data:png},
+  ]);
+}
+
 /* ================= render ================= */
 function render(){
   try{paintSyncChip()}catch(e){}
@@ -938,7 +1027,7 @@ const VIEW={
   <div class="setup"><div class="fields">${sheetTypeField()}${(isOld(S.cfg)?['mc','mi']:['roll','q','opt','mc','mi']).map(numField).join('')}
   ${isOld(S.cfg)?'':`<div class="field"><label>Test versions</label><div class="seg" role="group" aria-label="Test versions">${[[1,'One version'],[2,'Two: A and B']].map(([v,l])=>`<button class="seg-b ${versCount()===v?'on':''}" data-act="setVers" data-v="${v}">${l}</button>`).join('')}</div><p class="help">Two versions = two different answer keys. Each sheet is marked, and the app knows which is which.</p></div>`}</div>
   <figure class="preview"><div class="paper" id="preview">${sheetSVG(sheetCfg(0))}</div><figcaption>Letter size (8.5 × 11 in) · print at 100% / Actual size${versCount()>1?' · the PDF has version A then version B':''}${NATIVE?' · shares as PDF':''}</figcaption></figure></div>
-  <div class="actions">${S.test&&!NATIVE?'<button class="btn" data-act="testKit">Test kit</button>':''}<button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
+  <div class="actions">${S.test&&!NATIVE?'<button class="btn" data-act="testKit">Test kit</button>':''}<button class="btn" data-act="dlSheet">${NATIVE?ICON.share+' Share bubble sheet (PDF)':ICON.dl+' Download bubble sheet (PDF)'}</button><button class="btn" data-act="dlSheetDocx">${NATIVE?ICON.share:ICON.dl} 2 per page (Word)</button><button class="btn primary" data-act="next0">Next: answer key ${ICON.arrow}</button></div>
 </section>`},
 1(){const n=keyCount(),q=S.cfg.q;
 return `<section class="panel">
@@ -1813,6 +1902,12 @@ Object.assign(ACT,{
   backToExam:()=>{UI.view='exam';render();window.scrollTo({top:0})},
   openClass:b=>{persist();UI.classId=b.dataset.id;UI.view='class';render();window.scrollTo({top:0})},
   openExam:b=>openExam(b.dataset.id),
+  dlSheetDocx:async()=>{
+    try{toast('Making the Word file…');
+      const bytes=await sheetDocxBytes(S.cfg);
+      const nm=safeName(((S.exam.name||'Bubble Tsek')+' answer sheet 2 per page'))+'.docx';
+      await shareOrSave(nm,bytes,DOCX_MIME,'Answer sheets');
+    }catch(e){toast('The Word file could not be made. '+(e.message||''),'bad')}},
   addLate:()=>{UI.cur.adding=true;UI.cur.lateWarn='';lateAddRefresh()},
   lateCancel:()=>{UI.cur.adding=false;UI.cur.lateWarn='';UI.cur.lateName='';lateAddRefresh()},
   lateSave:()=>{
@@ -3249,7 +3344,7 @@ function primsPDF(pages){
       if(p.t==='rect'){doc.setLineWidth(p.lw||.3);doc.rect(p.x,p.y,p.w,p.h,p.fill?'F':'S')}
       else if(p.t==='circle'){doc.setLineWidth(p.lw||.3);doc.circle(p.cx,p.cy,p.r,p.fill?'F':'S')}
       else if(p.t==='line'){doc.setLineWidth(p.lw);doc.line(p.x1,p.y1,p.x2,p.y2)}
-      else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);doc.text(p.s,p.x,p.y,{align:p.align})}
+      else{doc.setFont('helvetica',p.bold?'bold':'normal');doc.setFontSize(p.size);if(p.grey){const g=parseInt(p.grey.slice(1,3),16);doc.setTextColor(g,g,g)}else doc.setTextColor(0);doc.text(p.s,p.x,p.y,{align:p.align});doc.setTextColor(0)}
     }});
   return doc.output('arraybuffer');
 }
