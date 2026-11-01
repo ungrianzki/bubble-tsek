@@ -214,6 +214,26 @@ td.keycol{background:var(--ok-soft);color:var(--ok);font-weight:600}
 .tgl.on{background:var(--ok)}.tgl.on i{left:25px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .qtext{font-weight:400;font-size:.78rem;text-align:left;max-width:260px;white-space:normal;color:var(--ink-2,#445);margin-top:2px;line-height:1.25}.qtext small{display:block;color:var(--muted,#778)}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+.res{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);
+  grid-template-areas:"img top" "img rest";grid-template-rows:auto 1fr;gap:14px 22px;align-items:start}
+.res-img{grid-area:img}
+.res-top{grid-area:top}
+.res-rest{grid-area:rest;align-self:start}
+@media (max-width:760px){
+  .res{display:flex;flex-direction:column;gap:12px}
+  .res-img{order:1}.res-top{order:2}.res-rest{order:3}
+}
+.scorehead{display:flex;gap:14px;align-items:center;justify-content:space-between}
+.scorehead .score{margin:2px 0 0}
+.btn.savebig{background:var(--ok);border-color:var(--ok);color:#fff;font-size:1.15rem;font-weight:800;
+  padding:16px 30px;border-radius:14px;box-shadow:0 6px 16px rgba(27,122,76,.32);flex:0 0 auto}
+.btn.savebig:disabled{background:#B9C3CB;border-color:#B9C3CB;box-shadow:none}
+.btn.editminor{background:#FDF2D6;border-color:#EBD08A;color:#7A5600}
+.btn.killminor{background:#FBE7E4;border-color:#F0BDB5;color:#9B2C1D}
+.who{margin-top:10px}
+.minor{display:flex;gap:8px;margin:12px 0 2px}
+.minor .btn{padding:8px 14px;font-size:.92rem}
 </style>
 </head>
 <body>
@@ -247,7 +267,7 @@ const AV={u0:7,u1:183,v0:-3,v1:207};                         // usable answer ar
 const CODE={n:34,cw:3.2,x0:(190-34*3.2)/2};
 const VER={n:3,cw:3.2,x0:22};   // marker cell + 2 bits, left of the code strip (A=00, B=01). Missing = version A.
 const VLET='AB';
-const APP_VER='22';
+const APP_VER='23';
 /* ===== The teacher's ORIGINAL sheet (pre-Bubble Tsek form): 3-digit roll, 20 items, A–E, 3×5 grid of squares, no code strip.
    Measured from "answer sheet 20.pdf" (710×1010 px image, 0.19909 mm/px). Coordinates are mm from the top-left square's centre. */
 /* ===== The school's pre-printed sheets. Two families, both measured from the school's own PDFs:
@@ -542,16 +562,34 @@ function readCode(G,H){
   // Cells are compared with the paper just above and below them (shadow-proof), and the strip is searched a few mm around
   // where it should be, because a corner square in shadow or blur can shift the frame slightly. Guards + CRC decide.
   const avg=(u,v)=>{let s=0;for(const dx of[-.6,0,.6])for(const dy of[-.6,0,.6])s+=sampleAt(G,H,u+dx,v+dy);return s/9};
+  /* Otsu on the 34 cell ratios: the strip always holds both black and white cells, so the
+     split can be measured instead of assumed. A dim or washed-out photo lifts every reading
+     together — the separation survives, the absolute level does not. */
+  const split=r=>{
+    const s=[...r].sort((a,b)=>a-b),n=s.length;
+    let best=null;
+    for(let k=1;k<n;k++){
+      const lo=s.slice(0,k),hi=s.slice(k);
+      const ml=lo.reduce((a,b)=>a+b,0)/lo.length,mh=hi.reduce((a,b)=>a+b,0)/hi.length;
+      const score=lo.length*hi.length*(mh-ml)*(mh-ml);
+      if(!best||score>best.score)best={score,thr:(ml+mh)/2,gap:mh-ml};
+    }
+    return best;
+  };
   const at=(du,dv)=>{const r=[];for(let i=0;i<CODE.n;i++){const u=CODE.x0+CODE.cw*(i+.5)+du,v=FH+dv;
       const w=Math.max(avg(u,v-CODE.cw*1.15),avg(u,v+CODE.cw*1.15));r.push(avg(u,v)/Math.max(1,w))}
-    let m=0;r.forEach(x=>m+=Math.min(.3,Math.abs(x-.62)));return {du,dv,L:r.map(x=>x<.62?1:0),m:m/r.length-.002*(Math.abs(du)+Math.abs(dv))}};
+    const sp=split(r);
+    /* fall back to the old fixed level if the strip shows no real two-tone pattern */
+    const thr=(sp&&sp.gap>=.10)?Math.min(.92,Math.max(.40,sp.thr)):.62;
+    let m=0;r.forEach(x=>m+=Math.min(.3,Math.abs(x-thr)));
+    return {du,dv,thr,L:r.map(x=>x<thr?1:0),m:m/r.length-.002*(Math.abs(du)+Math.abs(dv))}};
   const tries=[];
   for(let du=-2.4;du<=2.41;du+=.4)for(let dv=-1.2;dv<=1.21;dv+=.6)tries.push(at(du,dv));
   tries.sort((a,b)=>b.m-a.m);
   for(const t of tries.slice(0,4)){
     const L=t.L;if(!(L[0]&&!L[1]&&!L[32]&&L[33]))continue;
     const cfg=bitsCfg(L.slice(2,32));if(!cfg)continue;
-    cfg.ver=readVer(G,H,t.du,t.dv);return cfg;
+    cfg.ver=readVer(G,H,t.du,t.dv,t.thr);return cfg;
   }
   // older method as a last try
   const v=[];for(let i=0;i<CODE.n;i++)v.push(avg(CODE.x0+CODE.cw*(i+.5),FH));
@@ -560,11 +598,12 @@ function readCode(G,H){
   if(!cfg)return null;cfg.ver=readVer(G,H,0,0);return cfg;
 }
 /* Version block: cell 0 black = the sheet carries a version, then 2 bits. Older sheets have nothing there -> version A. */
-function readVer(G,H,du,dv){
+function readVer(G,H,du,dv,t){
   du=du||0;dv=dv||0;
   const avg=(u,v)=>{let s=0;for(const dx of[-.6,0,.6])for(const dy of[-.6,0,.6])s+=sampleAt(G,H,u+dx,v+dy);return s/9};
+  const thr=(typeof t==='number'&&t>0)?t:0.62;
   const c=[];
-  for(let i=0;i<VER.n;i++){const u=VER.x0+VER.cw*(i+.5)+du,v=FH+dv;const wht=Math.max(avg(u,v-VER.cw*1.15),avg(u,v+VER.cw*1.15));c.push(avg(u,v)<wht*0.62?1:0)}
+  for(let i=0;i<VER.n;i++){const u=VER.x0+VER.cw*(i+.5)+du,v=FH+dv;const wht=Math.max(avg(u,v-VER.cw*1.15),avg(u,v+VER.cw*1.15));c.push(avg(u,v)<wht*thr?1:0)}
   if(!c[0])return 0;
   return (c[1]<<1)|c[2];
 }
@@ -579,22 +618,67 @@ function camFrame(v){
   const G=toGray(v,v.videoWidth,v.videoHeight,1280,Cam.cv);
   return {r:analyze(G),G};
 }
+/* How well do this exam's own bubbles line up under H? Used only when the code strip
+   cannot be decoded, so a blurred strip no longer throws away a good sheet. */
+/* how much of one answer column is actually printed on the paper */
+function btColScore(G,H,cfg,oi){
+  try{
+    if(!cfg||isOld(cfg))return 0;
+    const g=geo(cfg),list=[];
+    g.ans.forEach(a=>{if(a.opts[oi])list.push(a.opts[oi])});
+    if(!list.length)return 0;
+    return bubblesFound(G,H,list,g.d/2)/list.length;
+  }catch(e){return 0}
+}
+function btGridScore(G,H){
+  try{
+    const cfg=S&&S.cfg;if(!cfg||isOld(cfg))return 0;
+    const g=geo(cfg),list=[];
+    g.ans.forEach(a=>a.opts.forEach(o=>list.push(o)));
+    g.roll.forEach(col=>col.forEach(b=>list.push(b)));
+    if(list.length<8)return 0;
+    const n=bubblesFound(G,H,list,g.d/2);
+    return n/list.length;
+  }catch(e){return 0}
+}
 function locate(G,quads,f){
   const box=[[0,0],[FW,0],[FW,FH],[0,FH]];
-  let old=null;
+  let old=null;const btCands=[];
   for(const q of quads){
     const P=q.map(p=>({x:(p.x+.5)*f-.5,y:(p.y+.5)*f-.5}));
     for(const pts of [P,[P[2],P[3],P[0],P[1]]]){
       const H=homography(box,pts);if(!H)continue;
       const cfg=readCode(G,H);if(cfg)return {ok:true,H,corners:pts,cfg,pxmm:dist(pts[0],pts[1])/FW};
+      /* The strip is 3.2 mm cells; on a small print photographed slightly soft they can smear
+         into the paper and refuse to decode even though the sheet is perfectly readable.
+         School sheets have no strip at all and are handled by checking that the bubble grid
+         lines up — do the same here, using the settings this exam was set up with. */
+      btCands.push({H,corners:pts,sc:btGridScore(G,H)});
       for(const T of [OLD20,SCH60]){
         const Ho=homography([[0,0],[T.FW,0],[T.FW,T.FH],[0,T.FH]],pts);if(!Ho)continue;
         const sc=oldScore(G,Ho,T);if(sc&&(!old||sc>old.sc))old={H:Ho,corners:pts,sc,T};
       }
     }
   }
+  /* A blurred strip still leaves the bubble grid. Accept it only when one orientation is
+     clearly the sheet: enough of the grid present, and well ahead of every other orientation. */
+  btCands.sort((a,b)=>b.sc-a.sc);
+  let btBest=(btCands.length&&btCands[0].sc>=0.40&&
+    btCands[0].sc>=1.8*(btCands[1]?btCands[1].sc:0))?btCands[0]:null;
+  /* Nothing in the picture says how many choices the sheet has, so check the one column that
+     tells them apart: if this exam expects a last column and the paper has no bubbles there,
+     it is a different sheet. */
+  if(btBest&&btColScore(G,btBest.H,S.cfg,S.cfg.opt-1)<0.5*btColScore(G,btBest.H,S.cfg,0))btBest=null;
+  if(btBest&&(!old||btBest.sc>=0.9)){
+    const cfg=Object.assign({},S.cfg,{ver:readVer(G,btBest.H,0,0)||0,fromGrid:true});
+    return {ok:true,H:btBest.H,corners:btBest.corners,cfg,pxmm:dist(btBest.corners[0],btBest.corners[1])/FW};
+  }
   if(old){const T=old.T===SCH60?schVariant(G,old.H):old.T;
     return {ok:true,H:old.H,corners:old.corners,cfg:oldCfg(T),pxmm:dist(old.corners[0],old.corners[1])/T.FW}}
+  if(btBest){
+    const cfg=Object.assign({},S.cfg,{ver:readVer(G,btBest.H,0,0)||0,fromGrid:true});
+    return {ok:true,H:btBest.H,corners:btBest.corners,cfg,pxmm:dist(btBest.corners[0],btBest.corners[1])/FW};
+  }
   return {ok:false,reason:'code'};
 }
 function bubbleFill(G,H,u,v,BD){
@@ -1250,12 +1334,31 @@ function resultModal(){
   const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
   return `<div class="res">
   <div class="res-img" id="resImg"></div>
-  <div>
+  <div class="res-top" id="resTop">${resTop()}</div>
+  <div class="res-rest">
     <div id="resInfo">${resInfo()}</div>
     <div id="resEdit" ${cur.editing?'':'hidden'}>${cur.editing?resEditor():''}</div>
     <div id="resAdd" ${cur.adding?'':'hidden'}>${cur.adding?lateAddForm():''}</div>
-    <div class="actions" id="resBtns">${resButtons()}</div>
+    <div class="actions" id="resBtns" hidden></div>
   </div></div>`;
+}
+function saveBtn(){
+  const cur=UI.cur,ok=/^\d+$/.test(cur.roll)&&studentMap()[cur.roll],
+    prev=ok&&S.results[cur.roll]&&!(cur.autoSaved&&cur.roll===cur.savedRoll);
+  return `<button class="btn savebig" data-act="resSave" ${ok?'':'disabled'}>${prev?'Replace':'Save'}</button>`;
+}
+function minorBtns(){
+  const cur=UI.cur;
+  return `<div class="minor"><button class="btn editminor" data-act="resEdit">${cur.editing?'Hide editor':'Edit'}</button>`+
+    `<button class="btn killminor" data-act="resDiscard">Discard</button></div>`;
+}
+function resTop(){
+  const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null;
+  return `<div class="scorehead"><div><p class="eyebrow">Score</p>
+    <div class="score"><b>${fmt(g.score)}</b><span>/ ${fmt(maxScore())}</span></div></div>${saveBtn()}</div>
+  <div class="who">${st?esc(st.name):'<span class="dim">Unknown student</span>'}</div>
+  <div class="dim">ID number <span class="mono">${st?esc(cur.roll):'\u2014'}</span></div>
+  ${minorBtns()}`;
 }
 function resInfo(){
   const cur=UI.cur,g=grade(cur.ans),sm=studentMap(),validRoll=/^\d+$/.test(cur.roll),st=validRoll?sm[cur.roll]:null,prev=st&&S.results[cur.roll];
@@ -1267,10 +1370,7 @@ function resInfo(){
   if(cur.reasons&&cur.reasons.length)warn=`<div class="alert warn"><b>Auto-save paused for this sheet:</b> ${esc(cur.reasons.join('; '))}.</div>`+warn;
   else if(multiQ.length)warn+=`<div class="alert warn">Question${multiQ.length>1?'s':''} ${multiQ.join(', ')} ha${multiQ.length>1?'ve':'s'} 2+ answers and ${multiQ.length>1?'are':'is'} counted wrong. Tap <b>Edit</b> if the scan misread them.</div>`;
   if(cur.autoSaved)warn=`<div class="alert ok">This score was auto-saved. Change anything, then tap <b>Save score</b>. <b>Discard</b> removes it.</div>`+warn;
-  return `<p class="eyebrow">Score</p><div class="score"><b>${fmt(g.score)}</b><span>/ ${fmt(maxScore())}</span></div>
-  <div class="who">${st?esc(st.name):'<span class="dim">Unknown student</span>'}</div>
-  <div class="dim">ID number <span class="mono">${st?esc(cur.roll):'—'}</span></div>
-  <div class="chips"><span class="pill ok">${g.c} correct</span><span class="pill bad">${g.w-g.m} wrong</span><span class="pill">${g.b} blank</span>${g.m?`<span class="pill warn">${g.m} with 2+ answers</span>`:''}</div>
+  return `<div class="chips"><span class="pill ok">${g.c} correct</span><span class="pill bad">${g.w-g.m} wrong</span><span class="pill">${g.b} blank</span>${g.m?`<span class="pill warn">${g.m} with 2+ answers</span>`:''}</div>
   <div class="legend"><span><b style="color:#1B9A5A">●</b> correct</span><span><b style="color:#D03B28">●</b> wrong</span><span><b style="color:#1B9A5A">◌</b> right answer</span><span><b style="color:#C98A12">●</b> 2+ answers</span></div>
   ${warn}`;
 }
@@ -1283,7 +1383,8 @@ function resEditor(){
   return `<div class="card" style="margin-top:6px"><div class="field"><label for="edRoll">ID number</label><input class="txt mono" id="edRoll" data-ed="roll" inputmode="numeric" maxlength="${S.cfg.roll}" value="${esc(cur.roll.replace(/\?/g,''))}" style="max-width:180px"></div>
   <p class="help" style="margin:12px 0 8px">Tap to change answers. Tap a shaded one to clear it.</p>${keyGrid(cur.ans,'edAns',false,true)}</div>`;
 }
-function refreshRes(){if(UI.cur&&UI.cur.adding&&/^\d+$/.test(UI.cur.roll)&&studentMap()[UI.cur.roll]){UI.cur.adding=false;UI.cur.lateWarn='';lateAddRefresh()}
+function refreshRes(){const _t=$('#resTop');if(_t)_t.innerHTML=resTop();
+  if(UI.cur&&UI.cur.adding&&/^\d+$/.test(UI.cur.roll)&&studentMap()[UI.cur.roll]){UI.cur.adding=false;UI.cur.lateWarn='';lateAddRefresh()}
   const i=$('#resInfo');if(i)i.innerHTML=resInfo();const b=$('#resBtns');if(b)b.innerHTML=resButtons();mountCanvas(UI.cur,'student')}
 
 function onKeyCap(cap){
